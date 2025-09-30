@@ -1,7 +1,8 @@
 module.exports = function(RED) {
     const EventEmitter = require('events').EventEmitter;
-    require('events').EventEmitter.defaultMaxListeners = 600;
+    require('events').EventEmitter.defaultMaxListeners = 800;
     const https = require('https');
+    //const http = require('http');
     const nibeData = new EventEmitter()
     const nibe = require('nibepi')
     var serialPort = "";
@@ -98,6 +99,17 @@ module.exports = function(RED) {
                                     if(result.data!==(out)) {
                                         nibe.setData(curveadjust,out,(err,result) => {
                                             if(err) return console.log(err);
+                                            let save = {
+                                                titel:"Curveadjustment",
+                                                register:'curveadjust',
+                                                info:"NibePis total adjustment of the curve",
+                                                raw_data:out,
+                                                data:out,
+                                                unit:"°C",
+                                                icon_name:"fa-thermometer-three-quarters"
+                                            }
+                                            savedData['curveadjust'] = save;
+                                            saveDataGraph('curveadjust',Date.now(),save.raw_data)
                                         });
                                     }
                                 } else if(out<(result.data-0.75)) {
@@ -105,12 +117,21 @@ module.exports = function(RED) {
                                     if(result.data!==(out)) {
                                         nibe.setData(curveadjust,out,(err,result) => {
                                             if(err) return console.log(err);
+                                            let save = {
+                                                titel:"Curveadjustment",
+                                                register:'curveadjust',
+                                                info:"NibePis total adjustment of the curve",
+                                                raw_data:out,
+                                                data:out,
+                                                unit:"°C",
+                                                icon_name:"fa-thermometer-three-quarters"
+                                            }
+                                            savedData['curveadjust'] = save;
+                                            saveDataGraph('curveadjust',Date.now(),save.raw_data)
                                         });
                                     }
                                 }
-                            },(reject => {
-
-                            }));
+                            }).catch(console.log)
                                 
                         }, 5000,i);
                     }
@@ -192,7 +213,6 @@ module.exports = function(RED) {
                     if(plugin=="rmu") {
                         nibe.reqData(hP['startHW_rmu_'+system]).then(data => {
                             if(data!==undefined) {
-                                console.log(data)
                                 let regN = getList.findIndex(regN => regN.system == 's1');
                                 if(regN!==-1) {
                                 for( var i = 0; i < arr.length; i=i+1){
@@ -217,10 +237,9 @@ module.exports = function(RED) {
                             } else {
                                 return reject(false); 
                             }
-                        },(error => {
-                            //sendError('System',`System S${system.replace('s','')} ${text.sys_not_connected}`);
-                            return reject(false);
-                        }));
+                        }).catch((err) => {
+                            return reject(false)
+                        })
                     } else {
                         //sendError('System',`System S${system.replace('s','')} ${text.sys_not_connected}`);
                         //return reject(false);
@@ -307,10 +326,10 @@ module.exports = function(RED) {
                             }
                                 
                             }
-                        },(error => {
+                        }).catch((err) => {
                             checkRMU();
                             return reject(false);
-                        }));
+                        });
                         
                     } else {
                         checkRMU();
@@ -327,17 +346,17 @@ module.exports = function(RED) {
                                         } else {
                                             resolve(true)
                                         }
-                                    },(error => {
+                                    }).catch((err) => {
                                         return reject(false);
-                                    }));
+                                    });
                             } else {
                                 resolve(true)
                             }
                             }
-                        },(error => {
+                        }).catch((err) => {
                             checkRMU();
                             return reject(false);
-                        }));
+                        });
                         
                     }
                 } else {
@@ -362,10 +381,10 @@ module.exports = function(RED) {
                             resolve(true)
                         }
                         }
-                    },(error => {
+                    }).catch((err) => {
                         checkRMU();
                         return reject(false);
-                    }));
+                    });
                     
                 }
         })
@@ -434,9 +453,7 @@ module.exports = function(RED) {
                                 data.topic = item.registers[i].topic;
                                 result[item.registers[i].topic] = data;
                                 array.push(data)
-                            },(error => {
-                                console.log(error)
-                            }));
+                            }).catch(console.log)
                     }
                 }
             }
@@ -538,7 +555,7 @@ module.exports = function(RED) {
           }
             return output;
         }
-    const runWeather = (val) => {
+    const runWeather = async (val) => {
         nibe.log(`Startar Prognosreglering`,'weather','debug');
         let timeNow = Date.now();
         //var val = Object.assign({}, result);
@@ -548,8 +565,20 @@ module.exports = function(RED) {
             nibe.setConfig(config);
         }
         if(config.weather!==undefined && config.weather['enable_'+val.system]===true) {
+            if(config.weather.enable_up===undefined) {
+                config.weather.enable_up = true
+                nibe.setConfig(config);
+            }
+            if(config.weather.enable_down===undefined) {
+                config.weather.enable_down = true
+                nibe.setConfig(config);
+            }
             let outside = val.outside.data;
             nibe.log(`Aktuell utomhustemperatur: ${outside}`,'weather','debug');
+            if(val['heatcurve_'+val.system]===undefined) {
+                console.log('Hämtar värmekurva manuellt.')
+                val['heatcurve_'+val.system] = await getNibeData(hP['heatcurve_'+val.system]).catch(console.log)
+            }
             let heatcurve = val['heatcurve_'+val.system].data;
             nibe.log(`Aktuell värmekurva: ${heatcurve}`,'weather','debug');
             let setOffset = val.weatherOffset;
@@ -625,6 +654,19 @@ module.exports = function(RED) {
                                         setOffset = Number(((outside-windSet-sunFactor)*(heatcurve*1.2/10)/((heatcurve/10)+1)).toFixed(2));
                                     } else {
                                         setOffset = Number(((outside-tempPredicted-sunFactor)*(heatcurve*1.2/10)/((heatcurve/10)+1)).toFixed(2));
+                                    }
+                                    // Lägg in blockering om höjning eller sänkning
+                                    nibe.log(`Kollar om det är tillåtet att sänkas eller höjas.`,'weather','debug');
+                                    if(setOffset > 0) {
+                                        if(config.weather.enable_up===false) {
+                                            nibe.log(`Ej tillåtet att höja.`,'weather','debug');
+                                            setOffset = 0
+                                        }
+                                    } else {
+                                        if(config.weather.enable_down===false) {
+                                            nibe.log(`Ej tillåtet att sänka.`,'weather','debug');
+                                            setOffset = 0
+                                        }
                                     }
                                     nibe.log(`Utför kurvjustering, värde: ${setOffset}`,'weather','debug');
                                     curveAdjust('weather',val.system,setOffset);
@@ -740,11 +782,11 @@ module.exports = function(RED) {
                     conf.indoor.dm_reset_value = -200;
                     nibe.setConfig(conf);
                 }
-                if((conf.indoor.dm_reset_enable_stop!==undefined && conf.indoor.dm_reset_enable_stop===true && inside.data-conf.indoor.dm_reset_stop_diff)>inside_set.data) {
-                    if(dM.data<(dMstart.data+conf.indoor.dm_reset_value)) {
+                if((conf.indoor.dm_reset_enable_stop!==undefined && conf.indoor.dm_reset_enable_stop===true) && inside.data-conf.indoor.dm_reset_stop_diff > inside_set.data) {
+                    if((dM.data<(dMstart.data+conf.indoor.dm_reset_value) || (dM.data > dMstart.data && dM.data < 50))) {
                         nibe.setData(dM.register,100);
                     }
-                } else if((inside.data-conf.indoor.dm_reset_slow_diff)>inside_set.data) {
+                } else if((inside.data-conf.indoor.dm_reset_slow_diff > inside_set.data)) {
                     if(dM.data<(dMstart.data+conf.indoor.dm_reset_value)) {
                         nibe.setData(dM.register,dMstart.data);
                     }
@@ -784,80 +826,255 @@ module.exports = function(RED) {
             saveDataGraph('indoor_offset_'+data.system,timeNow,setOffset,true)
         }
     }
-    const priceAdjustCurve = (dataIn) => {
+    const priceAdjustCurve = async (dataIn) => {
         var data = Object.assign({}, dataIn);
-        let level = data.price_level.data;
         let system = data.system;
         let inside = data.priceSensor;
-        if(level!==undefined && level!==0) {
-            let config = nibe.getConfig();
-            
-            if(config.price===undefined) {
-                config.price = {};
-                nibe.setConfig(config);
-            }
-            if(config.price['temp_low_'+system]===undefined) {
-                config.price['temp_low_'+system] = 0;
-                nibe.setConfig(config);
-            }
+        nibe.log(`Startar elprisjustering priceAdjustCurve() för ${data.system}`,'price','debug');
+        let config = nibe.getConfig();
+        
+        if(config.price===undefined) {
+            config.price = {};
+            nibe.setConfig(config);
+        }
+        if(config.price['temp_low_'+system]===undefined) {
+            config.price['temp_low_'+system] = 0;
+            nibe.setConfig(config);
+        }
+        if(data.price_level===undefined) {
+            var hw_level = data.hw_price_level.data
+            var heat_level = data.heat_price_level.data
             let hw_enable = config.price.hotwater_enable;
             let heat_enable = config.price['enable_heat_'+system];
-            let temp_diff = config.price['temp_low_'+system];
-            let hw_adjust;
-            let heat_adjust = 0;
-            if(level=="VERY_CHEAP") {
-                if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_very_cheap);
-                if(heat_enable!==undefined && heat_enable===true) if(config.price['heat_very_cheap_'+system]!==undefined) heat_adjust = config.price['heat_very_cheap_'+system];
-            } else if(level=="CHEAP") {
-                if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_cheap);
-                if(heat_enable!==undefined && heat_enable===true) if(config.price['heat_cheap_'+system]!==undefined) heat_adjust = config.price['heat_cheap_'+system];
-            } else if(level=="NORMAL") {
-                if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_normal);
-                if(heat_enable!==undefined && heat_enable===true) if(config.price['heat_normal_'+system]!==undefined) heat_adjust = config.price['heat_normal_'+system];
-            } else if(level=="EXPENSIVE") {
-                if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_expensive);
-                if(inside!==undefined && (inside.data>(data['inside_set_'+system].data+temp_diff)) || config.price['enable_temp_'+system]===undefined || config.price['enable_temp_'+system]===false) {
-                if(heat_enable!==undefined && heat_enable===true) if(config.price['heat_expensive_'+system]!==undefined) heat_adjust = config.price['heat_expensive_'+system];
-                if(config.system.pump!=="F370" && config.system.pump!=="F470") {
-                    if(heat_adjust!==0) {
-                        if(data.dM.data<data.dMstart.data+(-100)) {
-                            nibe.setData(hP['dM'],(data.dMstart.data/2));
+            // Justera VV
+             if(hw_level!==undefined && hw_level!==0) {
+                var hw_adjust;
+                nibe.log(`Varmvatten: ${hw_enable}`,'price','debug');
+                if(hw_level=="VERY_CHEAP") {
+                    nibe.log(`Nivån är väldigt billig`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) {
+                        hw_adjust = Number(config.price.hotwater_very_cheap);
+                    }
+           
+                    
+                } else if(hw_level=="CHEAP") {
+                    nibe.log(`Nivån är billig`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) {
+                        hw_adjust = Number(config.price.hotwater_cheap);
+                    }
+                    
+                } else if(hw_level=="NORMAL") {
+                    nibe.log(`Nivån är normal`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) {
+                        hw_adjust = Number(config.price.hotwater_normal);
+                    }
+                } else if(hw_level=="EXPENSIVE") {
+                    nibe.log(`Nivån är dyr`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) {
+                        hw_adjust = Number(config.price.hotwater_expensive);
+                    }
+                } else if(hw_level=="VERY_EXPENSIVE") {
+                    nibe.log(`Nivån är väldigt dyr`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) {
+                        hw_adjust = Number(config.price.hotwater_very_expensive);
+                    }
+
+                }
+                if(hw_adjust!==undefined) {
+                    nibe.reqData(hP.hw_mode).then(result => {
+                        if(result.raw_data!==hw_adjust) nibe.setData(hP.hw_mode,hw_adjust);
+                    }).catch(console.log)
+                }
+            } else {
+                sendError('Elprisreglering',`Kunde ej hämta prisnivå från värmepumpen eller funktion avstängd.`);
+                
+                
+            }
+            // Justera värme
+            if(heat_level!==undefined && heat_level!==0) {
+                let temp_diff = config.price['temp_low_'+system];
+                let heat_adjust = 0;
+                
+                nibe.log(`Värme: ${heat_enable}`,'price','debug');
+                if(data['inside_set_'+system]!==undefined) {
+                    nibe.log(`Lägsta inomhustemperatur: ${data['inside_set_'+system].data+temp_diff} grader`,'price','debug');
+                }
+                if(heat_level=="VERY_CHEAP") {
+                    nibe.log(`Nivån är väldigt billig`,'price','debug');
+    
+                    if(heat_enable!==undefined && heat_enable===true) if(config.price['heat_very_cheap_'+system]!==undefined) heat_adjust = config.price['heat_very_cheap_'+system];
+                } else if(heat_level=="CHEAP") {
+                    nibe.log(`Nivån är billig`,'price','debug');
+                    if(heat_enable!==undefined && heat_enable===true) if(config.price['heat_cheap_'+system]!==undefined) heat_adjust = config.price['heat_cheap_'+system];
+                } else if(heat_level=="NORMAL") {
+                    nibe.log(`Nivån är normal`,'price','debug');
+                    if(config.price['heat_normal_'+system]!==undefined) heat_adjust = config.price['heat_normal_'+system];
+                } else if(heat_level=="EXPENSIVE") {
+                    nibe.log(`Nivån är dyr`,'price','debug');
+                    if(inside!==undefined && (inside.data>(data['inside_set_'+system].data+temp_diff)) || config.price['enable_temp_'+system]===undefined || config.price['enable_temp_'+system]===false) {
+                    if(heat_enable!==undefined && heat_enable===true) {
+                        if(config.price['heat_expensive_'+system]!==undefined) {
+                            heat_adjust = config.price['heat_expensive_'+system];
+                            nibe.log(`Justerar värmen ${heat_adjust}`,'price','debug');
+                        }
+                    }
+                    }
+                } else if(heat_level=="VERY_EXPENSIVE") {
+                    nibe.log(`Nivån är väldigt dyr`,'price','debug');
+                    if(heat_enable!==undefined && heat_enable===true) {
+                        if(inside!==undefined && (inside.data>(data['inside_set_'+system].data+temp_diff)) || config.price['enable_temp_'+system]===undefined || config.price['enable_temp_'+system]===false) {
+                            if(config.price['heat_very_expensive_'+system]!==undefined) heat_adjust = config.price['heat_very_expensive_'+system];
                         }
                     }
                 }
+                if(config.price.enable_freq===true) {
+                    await lockFreq({heat:heat_adjust}).then(result => {
+                        if(result!==null) nibe.log(`Frekvensen sänkt till ${result} hz`,'price','debug');
+                        if(result===null) nibe.log(`Frekvensen ej längre sänkt`,'price','debug');
+                    }).catch(async err => {
+                        nibe.log(err,'price','debug');
+                        blockAdditive({heat:heat_adjust}).then(result => {
+                        }).catch(async err => {
+                            nibe.log(`Värmepump stödjer inte stopp via gradminuter`,'price','debug');
+                        })
+                    })
+                } else if(config.price.enable_dM_reset) {
+                    blockAdditive({heat:heat_adjust}).then(result => {
+                    }).catch(async err => {
+                        nibe.log(`Värmepump stödjer inte stopp via gradminuter`,'price','debug');
+                    })
                 }
-            } else if(level=="VERY_EXPENSIVE") {
-                if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_very_expensive);
-                if(heat_enable!==undefined && heat_enable===true) {
-                    if(inside!==undefined && (inside.data>(data['inside_set_'+system].data+temp_diff)) || config.price['enable_temp_'+system]===undefined || config.price['enable_temp_'+system]===false) {
-                        if(config.price['heat_very_expensive_'+system]!==undefined) heat_adjust = config.price['heat_very_expensive_'+system];
+                
+                priceOffset[system] = heat_adjust;
+                curveAdjust('price',system,heat_adjust);
+            } else {
+                sendError('Elprisreglering',`Kunde ej hämta prisnivå från värmepumpen eller funktion avstängd.`);
+                if(priceOffset[system]!==0) {
+                    priceOffset[system] = 0;
+                    curveAdjust('price',system,0);
+                }
+                
+            }
+        } else {
+            let level = data.price_level.data;
+            if(level!==undefined && level!==0) {
+                let hw_enable = config.price.hotwater_enable;
+                let heat_enable = config.price['enable_heat_'+system];
+                let temp_diff = config.price['temp_low_'+system];
+                let hw_adjust;
+                let heat_adjust = 0;
+                
+                nibe.log(`Varmvatten: ${hw_enable}, Värme: ${heat_enable}`,'price','debug');
+                if(data['inside_set_'+system]!==undefined) {
+                    nibe.log(`Lägsta inomhustemperatur: ${data['inside_set_'+system].data+temp_diff} grader`,'price','debug');
+                }
+                if(level=="VERY_CHEAP") {
+                    nibe.log(`Nivån är väldigt billig`,'price','debug');
+    
+                    if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_very_cheap);
+                    if(heat_enable!==undefined && heat_enable===true) {
+                        if(config.price['heat_very_cheap_'+system]!==undefined) heat_adjust = config.price['heat_very_cheap_'+system];
                         if(config.system.pump!=="F370" && config.system.pump!=="F470") {
                             if(heat_adjust!==0) {
-                                if(data.dM.data<data.dMstart.data+(-100)) {
-                                    nibe.setData(hP['dM'],(data.dMstart.data/2));
+                                if(data.dM===undefined) {
+                                    data.dM = await getNibeData(hP['dM']).catch(console.log)
+                                }
+                                if(data.dM.data > 0 && data.dM.data > data.dMstart.data+25) {
+                                    nibe.log(`Ställer in gradminuter nära start ${data.dMstart.data+25}`,'price','debug');
+                                    nibe.setData(hP['dM'],(data.dMstart.data+25));
+                                }
+                                
+                            }
+                        }
+                    }
+                } else if(level=="CHEAP") {
+                    nibe.log(`Nivån är billig`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_cheap);
+                    if(heat_enable!==undefined && heat_enable===true) {
+                        if(config.price['heat_cheap_'+system]!==undefined) heat_adjust = config.price['heat_cheap_'+system];
+                        if(config.system.pump!=="F370" && config.system.pump!=="F470") {
+                            if(heat_adjust!==0) {
+                                if(data.dM===undefined) {
+                                    data.dM = await getNibeData(hP['dM']).catch(console.log);
+                                }
+                                if(data.dM.data > 0 && data.dM.data > data.dMstart.data+25) {
+                                    nibe.log(`Ställer in gradminuter nära start ${data.dMstart.data+25}`,'price','debug');
+                                    nibe.setData(hP['dM'],(data.dMstart.data+25));
                                 }
                             }
                         }
                     }
+                } else if(level=="NORMAL") {
+                    nibe.log(`Nivån är normal`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_normal);
+                    if(config.price['heat_normal_'+system]!==undefined) heat_adjust = config.price['heat_normal_'+system];
+                } else if(level=="EXPENSIVE") {
+                    
+                    nibe.log(`Nivån är dyr`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_expensive);
+                    if(inside!==undefined && (inside.data>(data['inside_set_'+system].data+temp_diff)) || config.price['enable_temp_'+system]===undefined || config.price['enable_temp_'+system]===false) {
+                    if(heat_enable!==undefined && heat_enable===true) {
+                        if(config.price['heat_expensive_'+system]!==undefined) {
+                            heat_adjust = config.price['heat_expensive_'+system];
+                            nibe.log(`Justerar värmen ${heat_adjust}`,'price','debug');
+                        }
+                    }
+                    }
+                } else if(level=="VERY_EXPENSIVE") {
+                    nibe.log(`Nivån är väldigt dyr`,'price','debug');
+                    if(hw_enable!==undefined && hw_enable===true) hw_adjust = Number(config.price.hotwater_very_expensive);
+                    if(heat_enable!==undefined && heat_enable===true) {
+                        if(inside!==undefined && (inside.data>(data['inside_set_'+system].data+temp_diff)) || config.price['enable_temp_'+system]===undefined || config.price['enable_temp_'+system]===false) {
+                            if(config.price['heat_very_expensive_'+system]!==undefined) heat_adjust = config.price['heat_very_expensive_'+system];
+                        }
+                    }
                 }
+                if(config.price.enable_freq===true) {
+                    await lockFreq({heat:heat_adjust}).then(result => {
+                        if(result!==null) nibe.log(`Frekvensen sänkt till ${result} hz`,'price','debug');
+                        if(result===null) nibe.log(`Frekvensen ej längre sänkt`,'price','debug');
+                    }).catch(async err => {
+                        nibe.log(err,'price','debug');
+                        blockAdditive({heat:heat_adjust}).then(result => {
+                        
+                        }).catch(async err => {
+                            nibe.log(`Värmepump stödjer inte stopp via gradminuter`,'price','debug');
+                        })
+                    })
+                } else if(config.price.enable_dM_reset) {
+                    blockAdditive({heat:heat_adjust}).then(result => {
+                    }).catch(async err => {
+                        nibe.log(`Värmepump stödjer inte stopp via gradminuter`,'price','debug');
+                    })
+                }
+                priceOffset[system] = heat_adjust;
+                curveAdjust('price',system,heat_adjust);
+                if(hw_adjust!==undefined) {
+                    nibe.reqData(hP.hw_mode).then(result => {
+                        if(result.raw_data!==hw_adjust) nibe.setData(hP.hw_mode,hw_adjust);
+                    }).catch(console.log)
+                }
+            } else {
+                sendError('Elprisreglering',`Kunde ej hämta prisnivå från värmepumpen.`);
+                if(priceOffset[system]!==0) {
+                    priceOffset[system] = 0;
+                    await lockFreq({heat:0}).then(result => {
+                        if(result!==null) nibe.log(`Frekvensen sänkt till ${result} hz`,'price','debug');
+                        if(result===null) nibe.log(`Frekvensen ej längre sänkt`,'price','debug');
+                    }).catch(async err => {
+                        nibe.log(err,'price','debug');
+                        blockAdditive({heat:0}).then(result => {
+                        
+                        }).catch(async err => {
+                            nibe.log(`Värmepump stödjer inte stopp via gradminuter`,'price','debug');
+                        })
+                    })
+                    curveAdjust('price',system,0);
+                }
+                
             }
-            priceOffset[system] = heat_adjust;
-            curveAdjust('price',system,heat_adjust);
-            if(hw_adjust!==undefined) {
-                nibe.reqData(hP.hw_mode).then(result => {
-                    if(result.raw_data!==hw_adjust) nibe.setData(hP.hw_mode,hw_adjust);
-                },(error => {
-                    console.log(error)
-                }))
-            }
-        } else {
-            sendError('Elprisreglering',`Kunde ej hämta prisnivå från värmepumpen.`);
-            if(priceOffset[system]!==0) {
-                priceOffset[system] = 0;
-                curveAdjust('price',system,0);
-            }
-            
         }
+        
     }
     let nibeGraph = [];
     let nibeGraphAdjust = [];
@@ -897,44 +1114,23 @@ module.exports = function(RED) {
         }
         
     }
-    function tibberBuildGraph(tibber,system) {
+    function priceBuildPoolGraph(prices,system) {
         let config = nibe.getConfig();
         if(config.price===undefined) {
             config.price = {};
             nibe.setConfig(config);
         }
-        var today = tibber.data.viewer.homes[0].currentSubscription.priceInfo.today;
-        var tomorrow;
-        if(tibber.data.viewer.homes[0].currentSubscription.priceInfo.tomorrow!==undefined) {
-            tomorrow = tibber.data.viewer.homes[0].currentSubscription.priceInfo.tomorrow;
-        }
-        var priceArray = today.concat(tomorrow);
-        priceArray.sort(function(a,b){return a.energy - b.energy});
-        if(tibber.data.viewer.homes[0].currentSubscription.priceInfo.tomorrow!==undefined) {
-            tomorrow = tibber.data.viewer.homes[0].currentSubscription.priceInfo.tomorrow;
-        }
+        var priceArray = prices.prices
+        priceArray.sort(function(a,b){return a.value - b.value});
+
         var valueArray = [];
         var adjustArray = [];
         for( var o = 0; o < priceArray.length; o++){
-            let timestamp = toTimestamp(priceArray[o].startsAt)
+            let timestamp = priceArray[o].ts
             var adjust = 0;
-            let hotwater_adjust = Number(config.price.hotwater_normal);
-            let value = Number(priceArray[o].energy*100).toFixed(2);
-            if(priceArray[o].level=="VERY_CHEAP") {
-                hotwater_adjust = Number(config.price.hotwater_very_cheap);
-                adjust = config.price['heat_very_cheap_'+system]||0;
-            } else if(priceArray[o].level=="CHEAP") {
-                hotwater_adjust = Number(config.price.hotwater_cheap);
-                adjust = config.price['heat_cheap_'+system]||0;
-            } else if(priceArray[o].level=="NORMAL") {
-                hotwater_adjust = Number(config.price.hotwater_normal);
-                adjust = config.price['heat_normal_'+system]||0;
-            } else if(priceArray[o].level=="EXPENSIVE") {
-                hotwater_adjust = Number(config.price.hotwater_expensive);
-                adjust = config.price['heat_expensive_'+system]||0;
-            } else if(priceArray[o].level=="VERY_EXPENSIVE") {
-                hotwater_adjust = Number(config.price.hotwater_very_expensive);
-                adjust = config.price['heat_very_expensive_'+system]||0;
+            let value = Number((priceArray[o].value/100).toFixed(2));
+            if(config.price[`${priceArray[o].level}_POOL_HEAT`]!==undefined) {
+                adjust = config.price[`${priceArray[o].level}_POOL_HEAT`]
             }
             valueArray.push({x:timestamp,y:Number(value)});
             adjustArray.push({x:timestamp,y:Number(adjust.toFixed(2))})
@@ -952,106 +1148,342 @@ module.exports = function(RED) {
         let result = {values:sendArray,system:system};
         return result;
     }
-    async function runPrice(data,array) {
-        //let data = Object.assign({}, result);
+    function priceaiBuildGraph(heat,hw,data,prio_add_enable) {
+        var system = data.system
         let config = nibe.getConfig();
         if(config.price===undefined) {
             config.price = {};
             nibe.setConfig(config);
         }
-        let inside;
-        
-        if(config.price['sensor_'+data.system]!==undefined && config.price['sensor_'+data.system]!=="") {
-            let index = array.findIndex(i => i.name == config.price['sensor_'+data.system]);
-            if(index!==-1) {
-                inside = array[index];
+        let heat_enable = config.price['enable_heat_'+system];
+        var priceArrayHeat = heat.prices
+        priceArrayHeat.sort(function(a,b){return a.value - b.value});
+        var priceArrayHW = hw.prices
+        priceArrayHW.sort(function(a,b){return a.value - b.value});
+
+        var valueArray = [];
+        var adjustArrayHeat = [];
+        var adjustArrayHW = [];
+        for( var o = 0; o < priceArrayHeat.length; o++){
+            let timestamp = priceArrayHeat[o].ts
+            var adjust = 0;
+            let hotwater_adjust = Number(config.price.hotwater_normal);
+            let value = Number((priceArrayHeat[o].value/100).toFixed(2));
+            if(priceArrayHeat[o].level=="VERY_CHEAP") {
+                hotwater_adjust = Number(config.price.hotwater_very_cheap);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_very_cheap_'+system]||0;
+            } else if(priceArrayHeat[o].level=="CHEAP") {
+                hotwater_adjust = Number(config.price.hotwater_cheap);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_cheap_'+system]||0;
+            } else if(priceArrayHeat[o].level=="NORMAL") {
+                hotwater_adjust = Number(config.price.hotwater_normal);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_normal_'+system]||0;
+            } else if(priceArrayHeat[o].level=="EXPENSIVE") {
+                hotwater_adjust = Number(config.price.hotwater_expensive);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_expensive_'+system]||0;
+            } else if(priceArrayHeat[o].level=="VERY_EXPENSIVE") {
+                hotwater_adjust = Number(config.price.hotwater_very_expensive);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_very_expensive_'+system]||0;
             }
+            valueArray.push({x:timestamp,y:Number(value)});
+            adjustArrayHeat.push({x:timestamp,y:Number(adjust.toFixed(2))})
+            
         }
-        data.priceSensor = inside;
-        if(config.price!==undefined && config.price.enable===true) {
-            if(config.price.source=="tibber") {
-                await getTibberData().then(result => {
-                    data.tibber = result;
-                    data.price_current = {};
-                    data.price_current.data = Number((result.data.viewer.homes[0].currentSubscription.priceInfo.current.energy*100).toFixed(2))
-                    data.price_current.raw_data = Number((result.data.viewer.homes[0].currentSubscription.priceInfo.current.energy*100).toFixed(2))
-                    data.price_level = {};
-                    data.price_level.data = result.data.viewer.homes[0].currentSubscription.priceInfo.current.level;
-                    data.price_level.raw_data = result.data.viewer.homes[0].currentSubscription.priceInfo.current.level;
-                    priceAdjustCurve(data)
-                    nibeData.emit('pluginPrice',data);
-                    nibeData.emit('pluginPriceGraph',tibberBuildGraph(result,data.system));
-                },(reject => {
-                    console.log(reject)
-                }));
-            } else if(config.price.source=="nibe") {
-                data.price_level = await getNibeData(hP['price_level']);
-                data.price_enable = await getNibeData(hP['price_enable']);
-                priceAdjustCurve(data)
-                data.price_current = await getNibeData(hP['price_current']);
-                nibeData.emit('pluginPriceGraph',nibeBuildGraph(data,data.system));
-                nibeData.emit('pluginPrice',data);
+        for( var o = 0; o < priceArrayHW.length; o++){
+            let timestamp = priceArrayHW[o].ts
+            let hotwater_adjust = Number(config.price.hotwater_normal);
+            if(priceArrayHW[o].level=="VERY_CHEAP") {
+                hotwater_adjust = Number(config.price.hotwater_very_cheap);
+            } else if(priceArrayHW[o].level=="CHEAP") {
+                hotwater_adjust = Number(config.price.hotwater_cheap);
+            } else if(priceArrayHW[o].level=="NORMAL") {
+                hotwater_adjust = Number(config.price.hotwater_normal);
+            } else if(priceArrayHW[o].level=="EXPENSIVE") {
+                hotwater_adjust = Number(config.price.hotwater_expensive);
+            } else if(priceArrayHW[o].level=="VERY_EXPENSIVE") {
+                hotwater_adjust = Number(config.price.hotwater_very_expensive);
             }
+            adjustArrayHW.push({x:timestamp,y:Number(hotwater_adjust.toFixed(2))})
+            
         }
-        
+        valueArray.sort((a, b) => (a.x > b.x) ? 1 : -1)
+        adjustArrayHeat.sort((a, b) => (a.x > b.x) ? 1 : -1)
+        adjustArrayHW.sort((a, b) => (a.x > b.x) ? 1 : -1)
+
+        var sendArray = [
+            {
+                "series":["Pris","Värmejustering","Varmvattenläge"],
+                "data":[valueArray,adjustArrayHeat,adjustArrayHW],
+                "labels":["Pris","Värmejustering","Varmvattenläge"]
+            }];
+            if(prio_add_enable!==undefined) {
+                if(config.price.prio_enable===true) {
+                    nibe.log(`Prioriterad tillsats är aktiverad som elprisreglering, skapar graf`,'price','debug');
+                    var prioArray = [];
+                    let fee = config.price.prio_tax+config.price.prio_transfer
+                    let cop = config.price.prio_cop
+                    let cost = config.price.prio_cost
+                    for( var o = 0; o < priceArrayHeat.length; o++){
+                        let timestamp = priceArrayHeat[o].ts
+                        var adjust = 0;
+                        let price = Number((priceArrayHeat[o].value).toFixed(2));
+                        if(price+fee > cost*cop) {
+                            // Reglering
+                            prioArray.push({x:timestamp,y:10})
+                        } else {
+                            // Ingen reglering
+                            prioArray.push({x:timestamp,y:0})
+
+                        }
+                    }
+                    prioArray.sort((a, b) => (a.x > b.x) ? 1 : -1)
+                    sendArray[0].series.push('Prio. tillsats')
+                    sendArray[0].data.push(prioArray)
+                    sendArray[0].labels.push('Prio. tillsats')
+                }
+            }
+        let result = {values:sendArray,system:system};
+        return result;
     }
-    const sendError = (from,message) => {
-        let data = {from:from,message:message};
-        nibeData.emit('fault',data);
-    };
-    const getTibberData = () => {
-        const promise = new Promise((resolve,reject) => {
+    function tibberBuildGraph(tibber,system) {
         let config = nibe.getConfig();
         if(config.price===undefined) {
             config.price = {};
             nibe.setConfig(config);
         }
+        if(config.price.tibber_home===undefined) {
+            config.price.tibber_home = 0
+            nibe.setConfig(config);
+        }
+        let heat_enable = config.price['enable_heat_'+system];
+        var today = tibber.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.today;
+        var tomorrow;
+        if(tibber.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.tomorrow!==undefined) {
+            tomorrow = tibber.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.tomorrow;
+        }
+        var priceArray = today.concat(tomorrow);
+        priceArray.sort(function(a,b){return a.energy - b.energy});
+        if(tibber.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.tomorrow!==undefined) {
+            tomorrow = tibber.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.tomorrow;
+        }
+        var valueArray = [];
+        var adjustArray = [];
+        for( var o = 0; o < priceArray.length; o++){
+            let timestamp = toTimestamp(priceArray[o].startsAt)
+            var adjust = 0;
+            let hotwater_adjust = Number(config.price.hotwater_normal);
+            let value = Number(priceArray[o].energy.toFixed(2));
+            if(priceArray[o].level=="VERY_CHEAP") {
+                hotwater_adjust = Number(config.price.hotwater_very_cheap);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_very_cheap_'+system]||0;
+            } else if(priceArray[o].level=="CHEAP") {
+                hotwater_adjust = Number(config.price.hotwater_cheap);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_cheap_'+system]||0;
+            } else if(priceArray[o].level=="NORMAL") {
+                hotwater_adjust = Number(config.price.hotwater_normal);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_normal_'+system]||0;
+            } else if(priceArray[o].level=="EXPENSIVE") {
+                hotwater_adjust = Number(config.price.hotwater_expensive);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_expensive_'+system]||0;
+            } else if(priceArray[o].level=="VERY_EXPENSIVE") {
+                hotwater_adjust = Number(config.price.hotwater_very_expensive);
+                if(heat_enable!==undefined && heat_enable===true) adjust = config.price['heat_very_expensive_'+system]||0;
+            }
+            valueArray.push({x:timestamp,y:Number(value)});
+            adjustArray.push({x:timestamp,y:Number(adjust.toFixed(2))})
+            
+        }
+        valueArray.sort((a, b) => (a.x > b.x) ? 1 : -1)
+        adjustArray.sort((a, b) => (a.x > b.x) ? 1 : -1)
+
+        var sendArray = [
+            {
+                "series":["Pris","Kurvjustering"],
+                "data":[valueArray,adjustArray],
+                "labels":["Pris","Kurvjustering"]
+            }];
+        let result = {values:sendArray,system:system};
+        return result;
+    }
+
+///////##########################################################
+// ##################################################################
+// # START: Algoritm från energy.anerdins-iot.se (ORIGINAL-LOGIK)   #
+// ##################################################################
+
+function findTradingOpportunities(sortedPrices, originalData, config) {
+    const opportunities = [];
+
+    // ##################################################################
+    // # START: KORRIGERING FÖR FLEXIBEL UPPLÖSNING                     #
+    // ##################################################################
+    let slotsInWindow = config.timeWindow; // Standardvärde ifall något går fel
+
+    // Beräkna hur många minuter varje datapunkt representerar (60 för timme, 15 för kvart)
+    if (originalData.length > 1) {
+        const slotDurationMinutes = (originalData[1].ts - originalData[0].ts) / 60000;
+        if (slotDurationMinutes > 0) {
+            // Beräkna hur många "slots" som ryms i den angivna tidshorisonten i timmar
+            slotsInWindow = Math.round((config.timeWindow * 60) / slotDurationMinutes);
+        }
+    }
+    nibe.log(`[DEBUG Algorithm] Tidshorisont är ${config.timeWindow} timmar, vilket motsvarar ${slotsInWindow} datapunkter.`, 'price', 'debug');
+    // ##################################################################
+    // # SLUT: KORRIGERING                                              #
+    // ##################################################################
+
+    for (const lowPoint of sortedPrices) {
+        let buyIndex = -1;
+        for (let j = 0; j < originalData.length; j++) {
+            if (lowPoint.ts === originalData[j].ts) {
+                buyIndex = j;
+                break;
+            }
+        }
+
+        if (buyIndex === -1) continue;
+
+         // Använder den nya, korrekt beräknade tidshorisonten
+        const endIndex = Math.min(buyIndex + slotsInWindow, originalData.length);
+
+
+        for (let sellIndex = buyIndex + 1; sellIndex < endIndex; sellIndex++) {
+            const spread = originalData[sellIndex].value - lowPoint.value;
+
+            if (spread > config.minSpread) {
+                opportunities.push({
+                    buy: lowPoint,
+                    sell: originalData[sellIndex],
+                    spread: spread
+                });
+            }
+        }
+    }
+    const sortedOpportunities = opportunities.sort((a, b) => b.spread - a.spread);
+    if (sortedOpportunities.length > 0) {
+        nibe.log(`[DEBUG] Bästa funna affär: Köp för ${sortedOpportunities[0].buy.value.toFixed(2)} öre, Sälj för ${sortedOpportunities[0].sell.value.toFixed(2)} öre, Spread: ${sortedOpportunities[0].spread.toFixed(2)} öre`, 'price', 'debug');
+    }
+    return sortedOpportunities;
+}
+
+/**
+ * Hittar den optimala kombinationen av handelsmöjligheter (ORIGINAL-VERSION)
+ * @private
+ */
+function findOptimalCombination(opportunities) {
+    if (opportunities.length === 0) return [];
+
+    const combinations = [];
+
+    // För varje möjlighet, bygg en kombination av icke-överlappande handel
+    for (let i = 0; i < opportunities.length; i++) {
+        const combination = [opportunities[i]];
+
+        for (let j = 0; j < opportunities.length; j++) {
+            if (i === j) continue;
+
+            // Kontrollerar om en affär överlappar med någon i den nuvarande kombinationen
+            const hasConflict = combination.some(trade =>
+                trade.buy.ts === opportunities[j].buy.ts ||
+                trade.sell.ts === opportunities[j].sell.ts ||
+                trade.buy.ts === opportunities[j].sell.ts ||
+                trade.sell.ts === opportunities[j].buy.ts
+            );
+
+            if (!hasConflict) {
+                combination.push(opportunities[j]);
+            }
+        }
+
+        const totalProfit = combination.reduce((sum, trade) => sum + trade.spread, 0);
+        combinations.push({
+            trades: combination,
+            totalProfit: totalProfit
+        });
+    }
+
+    // Returnera kombinationen med högst total profit
+    combinations.sort((a, b) => b.totalProfit - a.totalProfit);
+    //return combinations[0]?.trades || [];
+    // KORRIGERING: Ersätter "combinations[0]?.trades" med en säkrare variant.
+    return combinations.length > 0 ? combinations[0].trades : [];
+}
+
+
+function formatResult(optimalTrades) {
+    const buyPoints = [];
+    const sellPoints = [];
+
+    for (const trade of optimalTrades) {
+        buyPoints.push(trade.buy);
+        sellPoints.push(trade.sell);
+    }
+
+    return {
+        buy: buyPoints,
+        sell: sellPoints
+    };
+}
+
+function optimizeElectricityTrading(priceData, options = {}) {
+    if (!Array.isArray(priceData) || priceData.length === 0) {
+        return { buy: [], sell: [] };
+    }
+
+    const config = {
+        timeWindow: Number(options.timeWindow) || 12,
+        // KORRIGERAD: Använder 20 (ören) som standard, enligt originalet.
+        minSpread: Number(options.minSpread) || 20
+    };
+
+    const sortedByPrice = [...priceData].sort((a, b) => a.value - b.value);
+    const totalSpread = sortedByPrice[sortedByPrice.length - 1].value - sortedByPrice[0].value;
+
+    if (totalSpread <= config.minSpread) {
+        return { buy: [], sell: [] };
+    }
+
+    const tradingOpportunities = findTradingOpportunities(
+        sortedByPrice,
+        priceData,
+        config
+    );
+
+    if (tradingOpportunities.length === 0) {
+        return { buy: [], sell: [] };
+    }
+
+    const optimalCombination = findOptimalCombination(tradingOpportunities);
+    return formatResult(optimalCombination);
+}
+
+// ##################################################################
+// # SLUT: Algoritm                                                 #
+// ##################################################################
+
+// runPrice, nu med 15-min stöd. Priset för 4 kvartar räknas om till medelvärde för en timme.
+async function runPrice(data,array) {
+        
+    nibe.log(`Startar elprisreglering runPrice()`,'price','debug');
+    let config = nibe.getConfig();
+    let inside;
+    nibe.log(`Letar efter givare ${config.price['sensor_'+data.system]}`,'price','debug');
+    if(config.price['sensor_'+data.system]!==undefined && config.price['sensor_'+data.system]!=="") {
+        let index = array.findIndex(i => i.name == config.price['sensor_'+data.system]);
+        if(index!==-1) {
+            inside = array[index];
+            nibe.log(`Sätter inomhusgivare ${config.price['sensor_'+data.system]}, ${inside.data} grader`,'price','debug');
+        }
+    }
+    data.priceSensor = inside;
+    if(config.price!==undefined && config.price.enable===true) {
+        nibe.log(`Elprisreglering är aktiverad`,'price','debug');
+        if(config.price.source=="tibber") {
+            nibe.log(`Källan är Tibber`,'price','debug');
+            
             if(config.price.token!==undefined && config.price.token!=="") {
-                let data = "";
                 let token = config.price.token;
-                const request = JSON.stringify({
-                    query: "{\
-                        viewer {\
-                          homes {\
-                            currentSubscription {\
-                              status\
-                              priceInfo {\
-                                today{\
-                                  startsAt\
-                                  total\
-                                  energy\
-                                  level\
-                                  tax\
-                                }\
-                                current{\
-                                  total\
-                                  energy\
-                                  level\
-                                  tax\
-                                  startsAt\
-                                }\
-                                tomorrow {\
-                                  startsAt\
-                                  total\
-                                  level\
-                                  energy\
-                                  tax\
-                                }\
-                              }\
-                            }\
-                            consumption(resolution: HOURLY, last: 48) {\
-                              nodes {\
-                                from\
-                                to\
-                                consumption\
-                                consumptionUnit\
-                              }\
-                            }\
-                          }\
-                        }\
-                      }"
-                    });
-                  const options = {
+                const options = {
                     hostname: 'api.tibber.com',
                     port: 443,
                     path: '/v1-beta/gql',
@@ -1061,37 +1493,825 @@ module.exports = function(RED) {
                         'Content-Type': 'application/json'
                     }
                   };
-                  
-                  const req = https.request(options, (res) => {
-                  
-                    res.on('data', (d) => {
-                            data += d;
-                        
+                  const request = JSON.stringify({
+                    query: "{\
+                        viewer {\
+                            homes {\
+                            currentSubscription {\
+                                status\
+                                priceInfo {\
+                                today{\
+                                    startsAt\
+                                    total\
+                                    energy\
+                                    level\
+                                    tax\
+                                }\
+                                current{\
+                                    total\
+                                    energy\
+                                    level\
+                                    tax\
+                                    startsAt\
+                                }\
+                                tomorrow {\
+                                    startsAt\
+                                    total\
+                                    level\
+                                    energy\
+                                    tax\
+                                }\
+                                }\
+                            }\
+                            consumption(resolution: HOURLY, last: 48) {\
+                                nodes {\
+                                from\
+                                to\
+                                consumption\
+                                consumptionUnit\
+                                }\
+                            }\
+                            }\
+                        }\
+                        }"
+                    });
+                await getCloudData(options,request).then(result => {
+                    data.tibber = result;
+                    data.price_current = {};
+                    data.price_current.data = Number((result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.energy*100).toFixed(2))
+                    data.price_current.raw_data = Number((result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.energy*100).toFixed(2))
+                    data.price_level = {};
+                    data.price_level.data = result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.level;
+                    data.price_level.raw_data = result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.level;
+                    priceAdjustCurve(data)
+                    nibeData.emit('pluginPrice',data);
+                    nibeData.emit('pluginPriceGraph',tibberBuildGraph(result,data.system));
+                },(reject => {
+                    console.log(reject)
+                }));
+            } else {
+                sendError('Cloud',`Token är inte giltigt.`);
+                return
+            }
+            
+        } else if(config.price.source=="nibe") {
+            nibe.log(`Källan är Nibe`,'price','debug');
+            data.price_level = await getNibeData(hP['price_level']).catch(console.log);
+            data.price_enable = await getNibeData(hP['price_enable']).catch(console.log);
+            priceAdjustCurve(data)
+            data.price_current = await getNibeData(hP['price_current']).catch(console.log);
+            nibeData.emit('pluginPriceGraph',nibeBuildGraph(data,data.system));
+            nibeData.emit('pluginPrice',data);
+        } else if(config.price.source=="priceai") {
+            nibe.log(`Källan är Lokal AI`,'price','debug');
+            
+            if(config.price.token === undefined || config.price.token === "") {
+                sendError('Lokal AI',`Tibber Token krävs för att hämta prisdata.`);
+                return;
+            }
+
+            try {
+                const tibberToken = config.price.token;
+                const tibberOptions = {
+                    hostname: 'api.tibber.com',
+                    port: 443,
+                    path: '/v1-beta/gql',
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${tibberToken}`, 'Content-Type': 'application/json' }
+                };
+                
+                const tibberRequest = JSON.stringify({
+                    query: "{\
+                        viewer {\
+                            homes {\
+                            currentSubscription {\
+                                priceInfo(resolution: QUARTER_HOURLY) {\
+                                today{\
+                                    startsAt\
+                                    total\
+                                }\
+                                tomorrow {\
+                                    startsAt\
+                                    total\
+                                }\
+                                }\
+                            }\
+                            }\
+                        }\
+                        }"
+                });
+
+                const priceResult = await getCloudData(tibberOptions, tibberRequest);
+                if (!priceResult || !priceResult.data || !priceResult.data.viewer) {
+                    nibe.log(`Tibber API returnerade ett fel eller ingen data. Svar: ${JSON.stringify(priceResult)}`, 'price', 'error');
+                    sendError('Lokal AI', 'Kunde inte hämta prisdata från Tibber. Kontrollera token och abonnemang.');
+                    return;
+                }
+
+                const priceInfo = priceResult.data.viewer.homes[config.price.tibber_home || 0].currentSubscription.priceInfo;
+                
+                const quarterlyPriceList = (priceInfo.today || []).concat(priceInfo.tomorrow || []);
+                if (quarterlyPriceList.length === 0) {
+                    nibe.log('Ingen prisdata alls tillgänglig.', 'price', 'warn');
+                    return;
+                }
+                // ##################################################################
+                // # START: Logik för att konvertera kvartspriser till timpriser    #
+                // ##################################################################
+                const hourlyPriceList = [];
+                const groupedByHour = quarterlyPriceList.reduce((acc, price) => {
+                    const hour = price.startsAt.substring(0, 13); // "2025-09-30T10"
+                    if (!acc[hour]) {
+                        acc[hour] = [];
+                    }
+                    acc[hour].push(price.total);
+                    return acc;
+                }, {});
+
+                for (const hour in groupedByHour) {
+                    const pricesInHour = groupedByHour[hour];
+                    const averagePrice = pricesInHour.reduce((sum, p) => sum + p, 0) / pricesInHour.length;
+                    hourlyPriceList.push({
+                        startsAt: `${hour}:00:00.000+02:00`,
+                        total: averagePrice
+                    });
+                }
+                nibe.log(`Hämtade ${quarterlyPriceList.length} kvartspunkter och konverterade till ${hourlyPriceList.length} stabila timpunkter.`, 'price', 'debug');
+                const fullPriceList = hourlyPriceList;
+                // ##################################################################
+                // # SLUT PÅ KONVERTERING                                           #
+                // ##################################################################
+            
+
+                 nibe.log(`Hämtade ${fullPriceList.length} kvartspunkter för analys.`, 'price', 'debug');
+
+
+                const now = new Date();
+                now.setMinutes(0, 0, 0);
+                const futurePriceList = fullPriceList.filter(p => p && p.startsAt && (new Date(p.startsAt) >= now));
+                if (futurePriceList.length === 0) {
+                    nibe.log('Ingen framtida prisdata tillgänglig.', 'price', 'warn');
+                    return;
+                }
+                const currentHour = futurePriceList[0]; 
+                const currentHourDate = currentHour.startsAt;
+
+                const priceDataForAlgo = fullPriceList.map(p => ({
+                    value: p.total * 100, // ÖREN
+                    ts: new Date(p.startsAt).getTime(),
+                    date: p.startsAt
+                }));
+
+                const algoOptions = {
+                    timeWindow: config.price.time,
+                    minSpread: config.price.min_spread
+                };
+                const optimalTrades = optimizeElectricityTrading(priceDataForAlgo, algoOptions);
+                
+                let currentLevel = 'NORMAL';
+                let veryCheapHours, cheapHours, expensiveHours, veryExpensiveHours;
+                
+                if (optimalTrades.buy.length > 0) {
+                    const buyPrices = optimalTrades.buy.sort((a, b) => a.value - b.value);
+                    const sellPrices = optimalTrades.sell.sort((a, b) => a.value - b.value);
+                    const buyMedianIndex = Math.floor(buyPrices.length / 2);
+                    const sellMedianIndex = Math.floor(sellPrices.length / 2);
+
+                    veryCheapHours = new Set(buyPrices.slice(0, buyMedianIndex).map(p => p.date));
+                    cheapHours = new Set(buyPrices.slice(buyMedianIndex).map(p => p.date));
+                    expensiveHours = new Set(sellPrices.slice(0, sellMedianIndex).map(p => p.date));
+                    veryExpensiveHours = new Set(sellPrices.slice(sellMedianIndex).map(p => p.date));
+                    
+                    if (veryCheapHours.has(currentHourDate)) currentLevel = 'VERY_CHEAP';
+                    else if (cheapHours.has(currentHourDate)) currentLevel = 'CHEAP';
+                    else if (veryExpensiveHours.has(currentHourDate)) currentLevel = 'VERY_EXPENSIVE';
+                    else if (expensiveHours.has(currentHourDate)) currentLevel = 'EXPENSIVE';
+                }
+
+                const heat = {
+                    level: currentLevel,
+                    current: currentHour.total * 100,
+                    prices: fullPriceList.map(p => {
+                        const date = p.startsAt;
+                        let hourLevel = 'NORMAL';
+                        if (veryCheapHours && veryCheapHours.has(date)) hourLevel = 'VERY_CHEAP';
+                        else if (cheapHours && cheapHours.has(date)) hourLevel = 'CHEAP';
+                        else if (veryExpensiveHours && veryExpensiveHours.has(date)) hourLevel = 'VERY_EXPENSIVE';
+                        else if (expensiveHours && expensiveHours.has(date)) hourLevel = 'EXPENSIVE';
+
+                        return { value: p.total * 100, level: hourLevel, ts: new Date(p.startsAt).getTime() };
                     })
-                    res.on('end', () => {
-                        if(res.statusCode===200) {
-                            resolve(JSON.parse(data))
+                };
+                
+                const hw = { ...heat };
+                data.priceai = { heat, hw };
+                data.price_current = {
+                    data: Number((heat.current).toFixed(2)),
+                    raw_data: Number((heat.current).toFixed(2)),
+                    info: "Current electrical price",
+                    titel: "Electric price",
+                    register: "electric_price",
+                    unit: "öre",
+                    icon_name: "fa-flash"
+                };
+                data.heat_price_level = { data: heat.level, raw_data: heat.level };
+                data.hw_price_level = { data: hw.level, raw_data: hw.level };
+                
+                nibe.log(`Lokal AI analys klar. Nivå: ${heat.level}, Pris: ${data.price_current.data} öre`, 'price', 'debug');
+                
+                var prio_add_enable = await getNibeData(hP['prio_add_enable']).catch(() => {});
+                
+                if(prio_add_enable===undefined || prio_add_enable.raw_data===0) {
+                    priceAdjustCurve(data);
+                    adjustPool(data,data.system)
+                    .then(pool => {
+                        if(pool!==undefined) nibeData.emit('pluginPriceGraphPool',priceBuildPoolGraph(heat,data.system));
+                    })
+                    .catch(console.log);
+                }
+                
+                nibeData.emit('pluginPrice',data);
+                nibeData.emit('pluginPriceGraph',priceaiBuildGraph(heat,hw,data,prio_add_enable));
+
+            } catch(err) {
+                nibe.log(`Fel i Lokal AI-styrning: ${err}`, 'price', 'error');
+                console.log(err);
+            }
+        }
+    }
+}
+
+// ORGINAL runPrice
+    async function notUsedAnyLongerrunPrice(data,array) {
+        
+        nibe.log(`Startar elprisreglering runPrice()`,'price','debug');
+        //let data = Object.assign({}, result);
+        let config = nibe.getConfig();
+        let inside;
+        nibe.log(`Letar efter givare ${config.price['sensor_'+data.system]}`,'price','debug');
+        if(config.price['sensor_'+data.system]!==undefined && config.price['sensor_'+data.system]!=="") {
+            let index = array.findIndex(i => i.name == config.price['sensor_'+data.system]);
+            if(index!==-1) {
+                inside = array[index];
+                nibe.log(`Sätter inomhusgivare ${config.price['sensor_'+data.system]}, ${inside.data} grader`,'price','debug');
+            }
+        }
+        data.priceSensor = inside;
+        if(config.price!==undefined && config.price.enable===true) {
+            nibe.log(`Elprisreglering är aktiverad`,'price','debug');
+            if(config.price.source=="tibber") {
+                nibe.log(`Källan är Tibber`,'price','debug');
+                
+                if(config.price.token!==undefined && config.price.token!=="") {
+                    let token = config.price.token;
+                    const options = {
+                        hostname: 'api.tibber.com',
+                        port: 443,
+                        path: '/v1-beta/gql',
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                      };
+                      const request = JSON.stringify({
+                        query: "{\
+                            viewer {\
+                                homes {\
+                                currentSubscription {\
+                                    status\
+                                    priceInfo {\
+                                    today{\
+                                        startsAt\
+                                        total\
+                                        energy\
+                                        level\
+                                        tax\
+                                    }\
+                                    current{\
+                                        total\
+                                        energy\
+                                        level\
+                                        tax\
+                                        startsAt\
+                                    }\
+                                    tomorrow {\
+                                        startsAt\
+                                        total\
+                                        level\
+                                        energy\
+                                        tax\
+                                    }\
+                                    }\
+                                }\
+                                consumption(resolution: HOURLY, last: 48) {\
+                                    nodes {\
+                                    from\
+                                    to\
+                                    consumption\
+                                    consumptionUnit\
+                                    }\
+                                }\
+                                }\
+                            }\
+                            }"
+                        });
+                    await getCloudData(options,request).then(result => {
+                        data.tibber = result;
+                        data.price_current = {};
+                        data.price_current.data = Number((result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.energy*100).toFixed(2))
+                        data.price_current.raw_data = Number((result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.energy*100).toFixed(2))
+                        data.price_level = {};
+                        data.price_level.data = result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.level;
+                        data.price_level.raw_data = result.data.viewer.homes[config.price.tibber_home].currentSubscription.priceInfo.current.level;
+                        priceAdjustCurve(data)
+                        nibeData.emit('pluginPrice',data);
+                        nibeData.emit('pluginPriceGraph',tibberBuildGraph(result,data.system));
+                    },(reject => {
+                        console.log(reject)
+                    }));
+                } else {
+                    sendError('Cloud',`Token är inte giltigt.`);
+                    return
+                }
+                
+            } else if(config.price.source=="nibe") {
+                nibe.log(`Källan är Nibe`,'price','debug');
+                data.price_level = await getNibeData(hP['price_level']).catch(console.log);
+                data.price_enable = await getNibeData(hP['price_enable']).catch(console.log);
+                priceAdjustCurve(data)
+                data.price_current = await getNibeData(hP['price_current']).catch(console.log);
+                nibeData.emit('pluginPriceGraph',nibeBuildGraph(data,data.system));
+                nibeData.emit('pluginPrice',data);
+            } else if(config.price.source=="priceai") {
+                nibe.log(`Källan är AI`,'price','debug');
+                
+                if(config.price.token!==undefined && config.price.token!=="") {
+                    let token = config.price.token;
+                    
+                    
+                    try {
+                        const optionsHeat = {
+                            hostname: 'nibepi.anerdins.se',
+                            port: 8443,
+                            path: '/api/optimize/heat',
+                            rejectUnauthorized: false,
+                            requestCert: true,
+                            agent: false,
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        };
+                        const optionsHW = {
+                        hostname: 'nibepi.anerdins.se',
+                        port: 8443,
+                        path: '/api/optimize/battery',
+                        rejectUnauthorized: false,
+                        requestCert: true,
+                        agent: false,
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                      };
+                      var cheap_setting = undefined
+                      var expensive_setting = undefined
+                      if(config.price.enable_own_setting===true) {
+                        cheap_setting = config.price.verycheap
+                        expensive_setting = config.price.veryexpensive
+                      }
+                        const requestHeat = JSON.stringify({
+                            name:"heat",
+                            id:config.system.id,
+                            area:config.price.area,
+                            time:config.price.time,
+                            json:true,
+                            min_spread:config.price.min_spread,
+                            veryCheap:cheap_setting,
+                            veryExpensive:expensive_setting
+                        });
+                        if(config.price.time_hw===undefined) config.price.time_hw = config.price.time
+                        const requestHW = JSON.stringify({
+                            name:"hw",
+                            id:config.system.id,
+                            area:config.price.area,
+                            time:config.price.time_hw,
+                            ratio:config.price.ratio,
+                            json:true,
+                            min_spread:config.price.min_spread,
+                            veryCheap:cheap_setting,
+                            veryExpensive:expensive_setting
+                        });
+                        const heatSettings = await getCloudData(optionsHeat,requestHeat)
+                        const hwSettings = await getCloudData(optionsHW,requestHW)
+                        Promise.all([heatSettings, hwSettings]).then(async (values) => {
+                            nibe.log(`Data hämtad från AI`,'price','debug');
+                            var heat = values[0]
+                            var hw = values[1]
+                            data.priceai = {heat,hw};
+                            data.price_current = {};
+                            data.price_current.data = Number((heat.current).toFixed(2))
+                            data.price_current.raw_data = Number((heat.current).toFixed(2))
+                            data.heat_price_level = {};
+                            data.heat_price_level.data = heat.level;
+                            data.heat_price_level.raw_data = heat.level;
+                            data.hw_price_level = {};
+                            data.hw_price_level.data = hw.level;
+                            data.hw_price_level.raw_data = hw.level;
+                            data.price_current.info = "Current electrical price / divided by 10"
+                            data.price_current.titel = "Electric price"
+                            data.price_current.register = "electric_price"
+                            data.price_current.unit = ""
+                            data.price_current.icon_name = "fa-flash"
+                            savedData['electric_price'] = data.price_current;
+                            saveDataGraph('electric_price',Date.now(),(data.price_current.raw_data/10))
+                            nibe.log(`Hämtad nivå: ${heat.level}, hämtat pris: ${data.price_current.data} öre`,'price','debug');
+                            var prio_add_enable = await getNibeData(hP['prio_add_enable']).catch((err) => {
+
+                            })
+                            if(prio_add_enable!==undefined) {
+                            if(config.price.prio_enable===true) {
+                                if(config.price.prio_cop===undefined) {
+                                    config.price.prio_cop = 3
+                                    nibe.setConfig(config);
+                                }
+                                if(config.price.prio_cost===undefined) {
+                                    config.price.prio_cost = 1
+                                    nibe.setConfig(config);
+                                }
+                                if(config.price.prio_tax===undefined) {
+                                    config.price.prio_tax = 45
+                                    nibe.setConfig(config);
+                                }
+                                if(config.price.prio_transfer===undefined) {
+                                    config.price.prio_transfer = 25
+                                    nibe.setConfig(config);
+                                }
+                                nibe.log(`Prioriterad tillsats är aktiverad som elprisreglering`,'price','debug');
+                                let price = data.price_current.raw_data
+                                let fee = config.price.prio_tax+config.price.prio_transfer
+                                let cop = config.price.prio_cop
+                                let cost = config.price.prio_cost
+                                    if(price+fee > cost*cop) {
+                                        if(prio_add_enable.raw_data===0) {
+                                            nibe.log(`Elpriset har en högre kostnad att producera än prioriterad tillsats.`,'price','debug');
+                                            nibe.log(`Prioriterad tillsats är av, slår på`,'price','debug');
+                                            nibe.setData(hP['prio_add_enable'],1);
+                                            prio_add_enable.raw_data = 1
+                                            prio_add_enable.data = 1
+                                        }
+                                    } else {
+                                        if(prio_add_enable.raw_data===1) {
+                                            nibe.log(`Elpriset har en lägre kostnad att producera än prioriterad tillsats.`,'price','debug');
+                                            nibe.log(`Prioriterad tillsats är på, slår av`,'price','debug');
+                                            nibe.setData(hP['prio_add_enable'],0);
+                                            prio_add_enable.raw_data = 0
+                                            prio_add_enable.data = 0
+                                        }
+                                    }
+                                }
+                            }
+                            if(prio_add_enable===undefined || prio_add_enable.raw_data===0) {
+                                priceAdjustCurve(data)
+                                adjustPool(data,data.system)
+                                .then(pool => {
+                                    if(pool!==undefined) nibeData.emit('pluginPriceGraphPool',priceBuildPoolGraph(heat,data.system));
+                                })
+                                .catch(console.log)
+                            }
+                            
+                            nibeData.emit('pluginPrice',data);
+                            nibeData.emit('pluginPriceGraph',priceaiBuildGraph(heat,hw,data,prio_add_enable));
+                        })
+                    } catch(err) {
+                        console.log(err)
+                    }
+                    
+                }
+            }
+        }
+        
+    }
+    const sendError = (from,message) => {
+        let data = {from:from,message:message};
+        nibeData.emit('fault',data);
+    };
+    const adjustPool = (dataIn,system) => {
+        const promise = new Promise((resolve,reject) => {
+            try {
+                var data = Object.assign({}, dataIn);
+                let config = nibe.getConfig();
+                if(config.price===undefined) {
+                    config.price = {}
+                    nibe.setConfig(config);
+                }
+                if(config.price.VERY_CHEAP_POOL_HEAT===undefined) {
+                    config.price.pool_enable_s1 = false
+                    config.price.VERY_CHEAP_POOL_HEAT = 0
+                    config.price.CHEAP_POOL_HEAT = 0
+                    config.price.NORMAL_START_POOL_HEAT = 28
+                    config.price.NORMAL_STOP_POOL_HEAT = 32
+                    config.price.EXPENSIVE_POOL_HEAT = 0
+                    config.price.VERY_EXPENSIVE_POOL_HEAT = 0
+                    config.price.VERY_CHEAP_POOL_CPR = 0
+                    config.price.CHEAP_POOL_CPR = 0
+                    config.price.NORMAL_START_POOL_CPR = 0
+                    config.price.NORMAL_STOP_POOL_CPR = 0
+                    config.price.EXPENSIVE_POOL_CPR = 0
+                    config.price.VERY_EXPENSIVE_POOL_CPR = 0
+                    nibe.setConfig(config);
+                }
+                if(config.price.pool_enable_s1===true) {
+                    const poolTemp = getNibeData(hP['pool_temp_'+system]).catch(console.log)
+                    const poolStart = getNibeData(hP['pool_start_temp_'+system]).catch(console.log)
+                    const poolStop = getNibeData(hP['pool_stop_temp_'+system]).catch(console.log)
+                    const poolCpr = getNibeData(hP['pool_cpr_'+system]).catch(console.log)
+                    if(config.price.pool_max_temp===undefined || isNaN(config.price.pool_max_temp)) config.price.pool_max_temp = 100
+                    Promise.all([poolTemp, poolStart, poolStop, poolCpr]).then((values) => {
+                        let level = data.price_level.data;
+                        if(config.price[`${level}_POOL_HEAT`]!==undefined) {
+                            if(level=="NORMAL") {
+                                nibe.setData(hP['pool_start_temp_'+system],config.price.NORMAL_START_POOL_HEAT)
+                                nibe.setData(hP['pool_stop_temp_'+system],config.price.NORMAL_STOP_POOL_HEAT)
+                            } else {
+                                var adjust = config.price[`${level}_POOL_HEAT`]
+                                var start = config.price.NORMAL_START_POOL_HEAT
+                                var stop = config.price.NORMAL_STOP_POOL_HEAT
+                                nibe.setData(hP['pool_start_temp_'+system],Math.min(start+adjust,config.price.pool_max_temp))
+                                nibe.setData(hP['pool_stop_temp_'+system],Math.min(stop+adjust,config.price.pool_max_temp))
+                            }
+                            
+                            resolve(values)
                         } else {
-                            sendError('Tibber',`Ej kontakt med servern`);
-                            reject('No contact with server')
+                            resolve()
                         }
                         
+                    }).catch((err) => {
+                        sendError('Elprisreglering Poolstyrning',`Kunde inte hämta data, har värmepumpen stöd för pool?`);
                     });
-                  })
-                    
-                  req.on('error', (error) => {
-                    console.error(error)
-                  })
-                  
-                  req.write(request)
-                  req.end()
-            } else {
-                sendError('Tibber',`Token är inte giltigt.`);
-                reject('No token')
+                }
+            } catch(err) {
+                reject(err)
             }
+        });
+        return promise;
+    }
+    const getCloudData = (options,request) => {
+        const promise = new Promise((resolve,reject) => {
+        let config = nibe.getConfig();
+        if(config.price===undefined) {
+            config.price = {};
+            nibe.setConfig(config);
+        }
+        if(config.price.hw_speed===undefined) {
+            config.price.hw_speed = 20;
+            nibe.setConfig(config);
+        }
+        var ts = new Date()
+        var hour = ts.getHours()
+        var req = JSON.parse(request)
+        if(req.name=="heat") {
+                get(options,request).then(async (data) => {
+                    resolve(data)
+                }).catch(async (err) => {
+                    reject(err)
+                })
+        } else if(req.name=="hw") {
+                try {
+                    const bt6 = getNibeData(hP['bt6']).catch(console.log);
+                    const bt7 = getNibeData(hP['bt7']).catch(console.log);
+                    const hwStartTemp = getNibeData(hP['hw_start_0']).catch(console.log);
+                    const hwStopTemp = getNibeData(hP['hw_stop_2']).catch(console.log);
+                    Promise.all([bt6, bt7, hwStartTemp, hwStopTemp]).then((values) => {
+                        
+                        
+                        request = JSON.parse(request)
+                        request.battery = {
+                            capacity:values[3].data,
+                            value:values[0].data,
+                            zero:values[2].data,
+                            effect:config.price.hw_speed,
+                            hw:values[1].data
+                        }
+                        request = JSON.stringify(request)
+                        get(options,request).then(async (data) => {
+                            resolve(data)
+                        }).catch(async (err) => {
+                            reject(err)
+                        })
+                    })
+                } catch(err) {
+                    console.log('Was not able to get values for hw optimization from the cloud')
+                    get(options,request).then(async (data) => {
+                        resolve(data)
+                    }).catch(async (err) => {
+                        reject(err)
+                    })
+                }
+        } else {
+            get(options,request).then(async (data) => {
+                resolve(data)
+            }).catch(async (err) => {
+                reject(err)
+            })
+        }
+        async function get(options,request) {
+            const promise = new Promise((resolve,reject) => {
+                let data = "";
+                const req = https.request(options, (res) => {
+                
+                res.on('data', (d) => {
+                        data += d;
+                    
+                })
+                res.on('end', () => {
+                    if(res.statusCode===200) {
+                        try {
+                            data = JSON.parse(data)
+                            
+                            nibe.log(`Data hämtad via http`,'price','debug');
+                            resolve(data)
+                        } catch {
+                            sendError('Elprisreglering Cloud',`Kunde inte hantera JSON data`);
+                            
+                            nibe.log(`Något blev fel vid JSON konvertering`,'price','debug');
+                            reject('No JSON response')
+                        }
+                    } else {
+                        sendError('Cloud',`Ej kontakt med servern`);
+                        reject(res.statusMessage)
+                    }
+                    
+                });
+                })
+                
+                req.on('error', (error) => {
+                sendError('Cloud',`Ej kontakt med servern`);
+                reject(error)
+                })
+                
+                req.write(request)
+                req.end()
+                });
+            return promise;
+        }
+        
+        });
+        return promise;
+    }
+    
+function scale (number, inMin, inMax, outMin, outMax) {
+    return (number - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
+}
+const lockFreq = (options) => {
+    const promise = new Promise((resolve,reject) => {
+    let config = nibe.getConfig();
+    if(config.price===undefined) {
+        config.price = {};
+        nibe.setConfig(config);
+    }
+    if(config.system.pump!="F370" && config.system.pump!="F470" && config.system.pump!="F1145" && config.system.pump!="F1245") {
+        var min_temp = config.price.min_temp
+        var max_temp = config.price.max_temp
+        var min_freq = config.price.min_freq
+        var max_freq = config.price.max_freq
+        var outside = getNibeData(hP['outside']).catch(console.log);
+        var lock_freq_1 = getNibeData(hP['lock_freq_1_activate']).catch(console.log);
+        var lock_freq_2 = getNibeData(hP['lock_freq_2_activate']).catch(console.log);
+        var lock_freq_1_min = getNibeData(hP['lock_freq_1_min']).catch(console.log);
+        var lock_freq_1_max = getNibeData(hP['lock_freq_1_max']).catch(console.log);
+        var lock_freq_2_min = getNibeData(hP['lock_freq_2_min']).catch(console.log);
+        var lock_freq_2_max = getNibeData(hP['lock_freq_2_max']).catch(console.log);
+        Promise.all([lock_freq_1, lock_freq_2, lock_freq_1_min, lock_freq_1_max, lock_freq_2_min, lock_freq_2_max,outside]).then(async (values) => {
+            lock_freq_1 = values[0]
+            lock_freq_2 = values[1]
+            lock_freq_1_min = values[2]
+            lock_freq_1_max = values[3]
+            lock_freq_2_min = values[4]
+            lock_freq_2_max = values[5]
+            outside = values[6]
+            var frequency = scale(Number(outside.data.toFixed(0)), min_temp, max_temp, max_freq, min_freq)
+            if(frequency!==undefined && frequency!==null && !isNaN(frequency)) {
+                frequency = Number(frequency.toFixed(0))
+                if(frequency<21) frequency = 21
+                if(frequency>69) frequency = 69
+                nibe.log(`Max frekvens som ska köras vid denna utomhustemperatur: ${frequency} hz`,'price','debug');
+            } else {
+                frequency = 21
+                nibe.log(`Max frekvens som ska köras vid denna utomhustemperatur: Ställer in standard ${frequency} hz`,'price','debug');
+            }
+            if(frequency<21) frequency = 21
+            if(frequency > lock_freq_1_min.data) {
+                if(options.heat < 0) {
+                    nibe.setData(hP['lock_freq_1_min'],frequency,(err,result) => {
+                        if(err) {
+
+                        } else {
+                            nibe.setData(hP['lock_freq_1_activate'],"0",(err,result) => {
+                                if(err) {
+        
+                                } else {
+                                    nibe.setData(hP['lock_freq_1_activate'],"1")
+                                }
+        
+                            });
+                        }
+
+                    });
+                }
+
+            } else if(frequency < lock_freq_1_min.data) {
+                nibe.setData(hP['lock_freq_1_min'],frequency);
+            }
+            if(lock_freq_1_max.data!==70) nibe.setData(hP['lock_freq_1_max'],"70");
+            if(lock_freq_2_min.data!==71) nibe.setData(hP['lock_freq_2_min'],"71");
+            if(lock_freq_2_max.data!==120) nibe.setData(hP['lock_freq_2_max'],"120");
+            if(options.heat < 0) {
+                // Aktivera spärrband
+                if(lock_freq_1.data!==1) nibe.setData(hP['lock_freq_1_activate'],"1");
+                if(lock_freq_2.data!==1) nibe.setData(hP['lock_freq_2_activate'],"1");
+                if(config.price.block_add===true) {
+                    var dM = await getNibeData(hP['dM']).catch(console.log)
+                    var dMaddstart = await getNibeData(hP['dMaddstart']).catch(console.log)
+                    if(dMaddstart!==undefined) {
+                        if(dM.data < (dMaddstart.data+50)) {
+                            nibe.setData(hP['dM'],(dMaddstart.data+100));
+                            nibe.log(`Förhindrar gradminuter från att starta tillsats`,'price','debug');
+                        }
+                    } else {
+                        var dMadd = await getNibeData(hP['dMadd']).catch(console.log);
+                        var dMstart = await getNibeData(hP['dMstart']).catch(console.log);
+                        dMaddstart = dMstart.data-dMadd.data
+                        if(dM.data < (dMaddstart.data+50)) {
+                            nibe.setData(hP['dM'],(dMaddstart.data+100));
+                            nibe.log(`Förhindrar gradminuter från att starta tillsats`,'price','debug');
+                        }
+                    }
+                }
+                resolve(frequency)
+            } else if(options.heat >= 0) {
+                // Avaktivera spärrband
+                if(lock_freq_1.data!==0) nibe.setData(hP['lock_freq_1_activate'],"0");
+                if(lock_freq_2.data!==0) nibe.setData(hP['lock_freq_2_activate'],"0");
+                resolve(null)
+            }
+        }).catch(err => {
+            console.log(err)
+            reject(JSON.stringify(err,null,2))
+        })
+    } else {
+        reject(`This model does not support slowing the frequency down.`)
+    }
+    
     });
     return promise;
+}
+const blockAdditive = (options) => {
+    const promise = new Promise(async (resolve,reject) => {
+    let config = nibe.getConfig();
+    if(config.price===undefined) {
+        config.price = {};
+        nibe.setConfig(config);
     }
+    if(config.system.pump!=="F370" && config.system.pump!=="F470") {
+        if(options.heat < 0) {
+            if(data.dM===undefined) {
+                data.dM = await getNibeData(hP['dM']).catch(console.log);
+            }
+            getNibeData(hP['dMaddstart']).then(dMaddstart => {
+                if(data.dM.data<data.dMstart.data+(-100)) {
+                    nibe.setData(hP['dM'],(data.dMstart.data/2));
+                    nibe.log(`Återställer gradminuter`,'price','debug');
+                } else {
+                    if(data.dM.data < (dMaddstart.data+50)) {
+                        nibe.setData(hP['dM'],(dMaddstart.data+100));
+                        nibe.log(`Förhindrar gradminuter från att starta tillsats`,'price','debug');
+                    }
+                }
+            })
+            .catch(async (err) => {
+                data.dMadd = await getNibeData(hP['dMadd']).catch(console.log);
+                let dMaddstart = data.dMstart.data-data.dMadd.data
+                if(data.dM.data<data.dMstart.data+(-100)) {
+                    nibe.setData(hP['dM'],(data.dMstart.data/2));
+                    nibe.log(`Återställer gradminuter`,'price','debug');
+                } else {
+                    if(data.dM.data < (dMaddstart.data+50)) {
+                        nibe.setData(hP['dM'],(dMaddstart.data+100));
+                        nibe.log(`Förhindrar gradminuter från att starta tillsats`,'price','debug');
+                    }
+                }
+            })
+            
+        }
+    }
+    
+    });
+    return promise;
+}
     let hwSavedTemp = [];
     let hwTargetValue;
     async function hotwaterPlugin() {
@@ -1110,11 +2330,11 @@ module.exports = function(RED) {
         let hwStopTemp;
         let data = {};
         if(config.hotwater.enable_autoluxury===true || config.hotwater.enable_hw_priority===true) {      
-            hwON = await getNibeData(hP['startHW']);
-            bt6 = await getNibeData(hP['bt6']);
-            bt7 = await getNibeData(hP['bt7']);
-            hwMode = await getNibeData(hP['hw_mode']);
-            hwStopTemp = await getNibeData(hP['hw_stop_'+hwMode.raw_data]);
+            hwON = await getNibeData(hP['startHW']).catch(console.log);
+            bt6 = await getNibeData(hP['bt6']).catch(console.log);
+            bt7 = await getNibeData(hP['bt7']).catch(console.log);
+            hwMode = await getNibeData(hP['hw_mode']).catch(console.log);
+            hwStopTemp = await getNibeData(hP['hw_stop_'+hwMode.raw_data]).catch(console.log);
             data.bt6 = bt6;
             data.bt7 = bt7;
             data.hwMode = hwMode;
@@ -1183,7 +2403,7 @@ module.exports = function(RED) {
             nibeData.emit('pluginHotwaterAutoLuxury',data);
         }
         if(config.hotwater.enable_hw_priority===true) {
-            hwStartTemp = await getNibeData(hP['hw_start_'+hwMode.data]);
+            hwStartTemp = await getNibeData(hP['hw_start_'+hwMode.data]).catch(console.log);
             hwStartTemp.timestamp = time;
             if(hwON.raw_data!==4) {
                 if(bt7.data<=hwStartTemp.data) {
@@ -1209,6 +2429,7 @@ module.exports = function(RED) {
         
     }
 let fan_mode;
+let fan_mode_saved;
 let flow_set;
 let flow_saved;
 let fan_saved;
@@ -1217,32 +2438,173 @@ let fan_filter_low_eff;
 let filter_eff;
 let dMboost = false;
 let co2boost = false;
+let isRunFanExecuting = false;
+
 async function runFan() {
+    if (isRunFanExecuting) {
+        nibe.log('runFan körs redan, avvaktar denna körning.', 'fan', 'debug');
+        return;
+    }
+    isRunFanExecuting = true;
+    nibe.log('Kör runFan()', 'fan', 'debug');
+
+    try {
+        let config = nibe.getConfig();
+        var data = {};
+        var timeNow = Date.now();
+        if(config.fan===undefined) { config.fan = {}; nibe.setConfig(config); }
+        if(config.fan.enable!==true) {
+            return;
+        }
+
+        // Steg 1: Hämta grundläggande data (återgår till steg-för-steg-metoden)
+        data.cpr_set = await getNibeData(hP['cpr_set']).catch(console.log);
+        data.temp_fan_speed = await getNibeData(hP['fan_mode']).catch(console.log);
+        data.fan_speed = await getNibeData(hP['fan_speed']).catch(console.log);
+        data.bs1_flow = await getNibeData(hP['bs1_flow']).catch(console.log);
+        data.alarm = await getNibeData(hP['alarm']).catch(console.log);
+        data.evaporator = await getNibeData(hP['evaporator']).catch(console.log);
+
+        if ([data.cpr_set, data.temp_fan_speed, data.fan_speed, data.bs1_flow, data.alarm, data.evaporator].some(val => val === undefined)) {
+            nibe.log('Väntar på all startdata från värmepumpen...', 'fan', 'debug');
+            return;
+        }
+
+        nibe.log(`[DEBUG Fan Input] Indata: cpr_set=${data.cpr_set.raw_data}Hz, bs1_flow=${data.bs1_flow.raw_data}m3/h, fan_speed=${data.fan_speed.raw_data}%, temp_force=${data.temp_fan_speed.raw_data}`, 'fan', 'debug');
+        
+        // Steg 2: Bestäm börvärde (flow_set)
+        let current_mode = "normal";
+        let flow_set = config.fan.speed_normal;
+        nibe.log(`Grundinställning: Normalt luftflöde (${flow_set} m3/h)`, 'fan', 'debug');
+
+        if (config.fan.enable_low === true && data.cpr_set.raw_data > 0 && data.cpr_set.raw_data < config.fan.low_cpr_freq) {
+            current_mode = "low";
+            flow_set = config.fan.speed_low;
+            nibe.log(`Kompressorn körs på låg frekvens (${data.cpr_set.raw_data} Hz). Aktiverar sänkt luftflöde: ${flow_set} m3/h`, 'fan', 'debug');
+        }
+
+        if (config.fan.enable_dm_boost === true && config.system.pump !== "F370" && config.system.pump !== "F470") {
+            data.dM = await getNibeData(hP['dM']).catch(console.log);
+            data.dMstart = await getNibeData(hP['dMstart']).catch(console.log);
+            data.dMaddstart = await getNibeData(hP['dMaddstart']).catch(console.log);
+
+            if(data.dM && data.dMstart && data.dMaddstart) {
+                let boost_threshold = data.dMaddstart.data + (config.fan.dm_boost_start || 300);
+                if (data.dM.data < boost_threshold) {
+                    current_mode = "dm_boost";
+                    flow_set = config.fan.dm_boost_value;
+                    nibe.log(`Gradminuter (${data.dM.data}) under boostgräns (${boost_threshold}). Aktiverar boost-flöde: ${flow_set} m3/h`, 'fan', 'debug');
+                }
+            }
+        }
+        
+        nibe.log(`[DEBUG Fan Logic] Slutgiltigt börvärde (flow_set) bestämt till: ${flow_set} m3/h`, 'fan', 'debug');
+
+        // Steg 3: Utför reglering
+        nibe.log(`[DEBUG Fan Villkor] Kontrollerar villkor för reglering: Avfrostning (alarm!=183): ${data.alarm.raw_data !== 183}, Förångare (>0): ${data.evaporator.raw_data > 0}, Tillfällig forcering (==0): ${data.temp_fan_speed.raw_data === 0}`, 'fan', 'debug');
+        
+        if((data.alarm.raw_data !== 183 && data.evaporator.raw_data > 0 && data.temp_fan_speed.raw_data === 0)) {
+            if(flow_set === undefined) {
+                nibe.log(`Inget börvärde kunde bestämmas, avvaktar...`,'fan','warn');
+                return;
+            }
+
+            // Originalets regleringslogik
+            if(data.bs1_flow.raw_data > (flow_set + 20)) {
+                if(data.fan_speed.raw_data - 5 > 10) nibe.setData(hP.fan_speed, (data.fan_speed.raw_data - 5));
+                else if(data.fan_speed.raw_data > 10) nibe.setData(hP.fan_speed, (data.fan_speed.raw_data - 1));
+            } else if(data.bs1_flow.raw_data > (flow_set + 10)) {
+                if(data.fan_speed.raw_data > 0) nibe.setData(hP.fan_speed, (data.fan_speed.raw_data - 1));
+            } else if(data.bs1_flow.raw_data < (flow_set - 20)) {
+                if(data.fan_speed.raw_data + 5 < 100) nibe.setData(hP.fan_speed, (data.fan_speed.raw_data + 5));
+                else if(data.fan_speed.raw_data < 100) nibe.setData(hP.fan_speed, (data.fan_speed.raw_data + 1));
+            } else if(data.bs1_flow.raw_data < (flow_set - 10)) {
+                if(data.fan_speed.raw_data < 100) nibe.setData(hP.fan_speed, (data.fan_speed.raw_data + 1));
+            } else {
+                 nibe.log(`Luftflöde stabilt (${data.bs1_flow.raw_data} m3/h)`,'fan','debug');
+                 if (config.fan.enable_filter === true) {
+                    if (current_mode == "low") {
+                        if (config.fan.filter_value_low === -1) {
+                            config.fan.filter_value_low = data.fan_speed.raw_data;
+                            nibe.setConfig(config);
+                        } else if (config.fan.filter_value_low > 0) {
+                            fan_filter_low_eff = Number(((config.fan.filter_value_low / data.fan_speed.raw_data) * 100).toFixed(0));
+                        }
+                    } else if (current_mode == "normal") {
+                        if (config.fan.filter_value_normal === -1) {
+                            config.fan.filter_value_normal = data.fan_speed.raw_data;
+                            nibe.setConfig(config);
+                        } else if (config.fan.filter_value_normal > 0) {
+                            fan_filter_normal_eff = Number(((config.fan.filter_value_normal / data.fan_speed.raw_data) * 100).toFixed(0));
+                        }
+                    }
+                 }
+            }
+        }
+
+        // Steg 4: Spara och rapportera data
+        data.cpr_act = await getNibeData(hP['cpr_act']).catch(console.log);
+        saveDataGraph('fan_setpoint',timeNow,flow_set,true);
+        if(fan_filter_low_eff!==undefined && fan_filter_normal_eff===undefined) {
+            filter_eff = Number((fan_filter_low_eff).toFixed(0));
+            if(filter_eff>100) filter_eff = 100;
+        } else if(fan_filter_low_eff===undefined && fan_filter_normal_eff!==undefined) {
+            filter_eff = Number((fan_filter_normal_eff).toFixed(0));
+            if(filter_eff>100) filter_eff = 100;
+        } else if(fan_filter_low_eff!==undefined && fan_filter_normal_eff!==undefined) {
+            filter_eff = Number(((fan_filter_low_eff+fan_filter_normal_eff)/2).toFixed(0));
+            if(filter_eff>100) filter_eff = 100;
+        }
+        saveDataGraph('filter_eff',timeNow,filter_eff,true);
+        data.filter_eff = filter_eff;
+        data.setpoint = flow_set;
+        nibeData.emit('pluginFan',data);
+    } finally {
+        isRunFanExecuting = false;
+    }
+}
+
+
+//##ORGINAL RUNFAN()
+async function runFanOrginal() {
     async function checkBoost(data) {
         const promise = new Promise(async function (resolve,reject) {
         let config = nibe.getConfig();
         if(config.fan.enable_dm_boost!==undefined && config.fan.enable_dm_boost===true && config.system.pump!=="F370" && config.system.pump!=="F470") {
-        data.dMadd = await getNibeData(hP['dMadd']);
-        data.dMstart = await getNibeData(hP['dMstart']);
-        data.dM = await getNibeData(hP['dM']);
+        data.dMadd = await getNibeData(hP['dMadd']).catch(console.log);
+        data.dMaddstart = await getNibeData(hP['dMaddstart']).catch(console.log)
+        data.dMstart = await getNibeData(hP['dMstart']).catch(console.log);
+        if(data.dMaddstart===undefined) {
+            data.dMaddstart = {}
+            data.dMadd = await getNibeData(hP['dMadd']).catch(console.log);
+            data.dMaddstart.data = data.dMstart.data-data.dMadd.data
+            data.dMaddstart.raw_data = data.dMstart.raw_data-data.dMadd.raw_data
+        }
+        data.dM = await getNibeData(hP['dM']).catch(console.log);
             nibe.log(`Luftflödes boost vid låga gradminuter aktiverat.`,'fan','debug');
             if(config.fan.dm_boost_start===undefined || config.fan.dm_boost_start=="" || config.fan.dm_boost_start===0) {
                 config.fan.dm_boost_start = 300;
                 nibe.setConfig(config);
                 nibe.log(`Inget standard värde för boosting, ställer 300 gradminuter som diff.`,'fan','debug');
             }
-        let boost = (data.dMstart.data-data.dMadd.data)+config.fan.dm_boost_start;
+        let boost = (data.dMaddstart.data)+config.fan.dm_boost_start;
         nibe.log(`Boostvärde: ${boost}`,'fan','debug');
         if(boost>(data.dMstart.data-100)) {
             reject(new Error(`Startvärde för boost ligger för nära gradminuter vid start av kompressor, ${boost}>${data.dMstart.data-100}`))
         } else {
-            if(data.dM.data<boost) {
+            var lock_freq_1 = await getNibeData(hP['lock_freq_1_activate']).catch(console.log);
+            var lock_freq_2 = await getNibeData(hP['lock_freq_2_activate']).catch(console.log);
+
+            if(data.dM.data<boost && lock_freq_1.data===0 && lock_freq_2.data===0) {
                 nibe.log(`Gradminuter under gränsvärde för boost: ${boost}, Gradminuter: ${data.dM.data}`,'fan','debug');
                 if(data.alarm.raw_data!==183) {
                     if(config.fan.dm_boost_value!==undefined && config.fan.dm_boost_value!=="" && config.fan.dm_boost_value!==0) {
                         if(fan_mode!='dMboost') {
+                            fan_mode_saved = fan_mode
                             fan_mode = 'dMboost'
                             dMboost = true;
+                            fan_saved = data.fan_speed.raw_data;
+                            nibe.log(`Sparar fläkthastighet vid första upptäckt av forcering med gradminut boost, värde: ${fan_saved}%`,'fan','debug');
                         }
                         resolve(true)
                     } else {
@@ -1252,8 +2614,14 @@ async function runFan() {
                     nibe.log(`Gradminutboost uppfylld, men avfrostning pågår.`,'fan','debug');
                     reject();
                 }
+            } else if(lock_freq_1.data===1 && lock_freq_2.data===1) {
+                dMboost = false;
+                fan_mode = fan_mode_saved
+                nibe.log(`Blockering av hög kompressorfrekvens pågår via elprisreglering`,'fan','debug');
+                reject();
             } else if(data.dM.data>(boost+50)) {
                 dMboost = false;
+                fan_mode = fan_mode_saved
                 nibe.log(`Gradminuter över gränsvärde för boost: ${boost+50}, Gradminuter: ${data.dM.data}`,'fan','debug');
                 reject();
             } else {
@@ -1262,6 +2630,7 @@ async function runFan() {
                     resolve(true)
                 } else {
                     dMboost = false;
+                    fan_mode = fan_mode_saved
                     nibe.log(`Gradminuter över gränsvärde för boost: ${boost}, Gradminuter: ${data.dM.data}`,'fan','debug');
                     reject();
                 }
@@ -1271,6 +2640,19 @@ async function runFan() {
         dMboost = false;
         nibe.log(`Luftflödes boost vid låga gradminuter ej aktiverat.`,'fan','debug');
         reject();
+    }
+    if(fan_mode!=="dMboost" && fan_mode_saved=="dMboost") {
+        if(data.alarm.raw_data!==183) {
+            if(fan_saved!==undefined) {
+                nibe.setData(hP.fan_speed,fan_saved);
+                data.fan_speed.raw_data = fan_saved;
+                nibe.log(`Återställer fläkthastighet (${fan_saved}%)`,'fan','debug');
+            }
+            if(config.fan[`speed_${fan_mode_saved}`]!==undefined) flow_set = config.fan[`speed_${fan_mode_saved}`];
+            nibe.log(`Ställer in ${fan_mode_saved} luftflöde: ${config.fan[`speed_${fan_mode_saved}`]} m3/h`,'fan','debug');
+        } else {
+            nibe.log(`Avfrostning pågår, avvaktar, sparad fläkthastighet (${fan_saved}%)`,'fan','debug');
+        }
     }
     });
     return promise;
@@ -1284,19 +2666,19 @@ async function runFan() {
         // Function turned off, stopping.
         return;
     }
-    data.temp_fan_speed = await getNibeData(hP['fan_mode']);
+    data.temp_fan_speed = await getNibeData(hP['fan_mode']).catch(console.log);
     if(data.temp_fan_speed===undefined) {
         nibe.log('Ingen data från fläktforceringsregister. Avbryter...','fan','error');
         return;
     }
     
     data.co2Sensor;
-    data.fan_speed = await getNibeData(hP['fan_speed']);
-    data.bs1_flow = await getNibeData(hP['bs1_flow']);
+    data.fan_speed = await getNibeData(hP['fan_speed']).catch(console.log);
+    data.bs1_flow = await getNibeData(hP['bs1_flow']).catch(console.log);
     // Check if bug with saving 0% resolves if(flow_set===undefined) flow_set = data.bs1_flow.raw_data;
-    data.alarm = await getNibeData(hP['alarm']);
-    data.evaporator = await getNibeData(hP['evaporator']);
-    data.cpr_set = await getNibeData(hP['cpr_set']);
+    data.alarm = await getNibeData(hP['alarm']).catch(console.log);
+    data.evaporator = await getNibeData(hP['evaporator']).catch(console.log);
+    data.cpr_set = await getNibeData(hP['cpr_set']).catch(console.log);
     
     if(config.fan.enable_co2===true) {
     if(config.fan.sensor===undefined || config.fan.sensor=="Ingen") {
@@ -1314,7 +2696,7 @@ async function runFan() {
         if(data.co2Sensor.source=="mqtt") {
             await nibe.getMQTTData(data.co2Sensor.register).then(atad => {
                 let result = Object.assign({}, atad);
-                nibe.log('Data från CO2 givare\n'+result,'fan','debug');
+                nibe.log('Data från CO2 givare\n',result.data,'fan','debug');
                 let sensor_timeout;
                 if(config.home.sensor_timeout!==undefined && config.home.sensor_timeout!=="") {
                     sensor_timeout = result.timestamp+(config.home.sensor_timeout*60000);
@@ -1329,7 +2711,7 @@ async function runFan() {
                 if(timeNow>sensor_timeout) {
                     nibe.log(`CO2 givare ${data.co2Sensor.name} har inte uppdaterats. Ignorerar.`,'fan','error');
                 } else {
-                    nibe.log(`CO2 givare ${data.co2Sensor.name} värde:${result}`,'fan','debug');
+                    nibe.log(`CO2 givare ${data.co2Sensor.name} värde:${result.data}`,'fan','debug');
                     data.co2Sensor.data = result;
                     data.co2Sensor.data.timestamp = timeNow;
                     saveDataGraph('fan_co2Sensor',timeNow,data.co2Sensor.data.data,true)
@@ -1360,10 +2742,15 @@ async function runFan() {
                         nibe.log(`CO2 givares värde (${data.co2Sensor.data.data}) över gränsvärde ${config.fan.high_co2_limit}`,'fan','debug');
                         if(config.fan.speed_high!==undefined && config.fan.speed_high!="" && config.fan.speed_high!==0) {
                             if(fan_mode!='co2boost') {
+                                fan_mode_saved = fan_mode
                                 fan_mode = 'co2boost'
                                 co2boost = true;
                             }
                             flow_set = config.fan.speed_high;
+                            if(fan_mode!=="co2boost") {
+                                fan_saved = data.fan_speed.raw_data;
+                                nibe.log(`Sparar fläkthastighet vid första upptäckt av forcering med CO2, värde: ${fan_saved}%`,'fan','debug');
+                            }
                             nibe.log(`Ställer in högt luftflöde: ${config.fan.speed_high} m3/h`,'fan','debug');
                             dMboost = false;
                         } else {
@@ -1371,7 +2758,19 @@ async function runFan() {
                         }
                     } else {
                         nibe.log(`CO2 givares värde (${data.co2Sensor.data.data}) under gränsvärde ${config.fan.high_co2_limit}`,'fan','debug');
-
+                        
+                        if(data.alarm.raw_data!==183) {
+                            if(fan_saved!==undefined) {
+                                nibe.setData(hP.fan_speed,fan_saved);
+                                data.fan_speed.raw_data = fan_saved;
+                                nibe.log(`Återställer fläkthastighet (${fan_saved}%)`,'fan','debug');
+                            }
+                            if(config.fan[`speed_${fan_mode_saved}`]!==undefined) flow_set = config.fan[`speed_${fan_mode_saved}`];
+                            fan_mode = fan_mode_saved;
+                            nibe.log(`Ställer in ${fan_mode_saved} luftflöde: ${config.fan[`speed_${fan_mode_saved}`]} m3/h`,'fan','debug');
+                        } else {
+                            nibe.log(`Avfrostning pågår, avvaktar, sparad fläkthastighet (${fan_saved}%)`,'fan','debug');
+                        }
                     }
                 } else {
                     nibe.log(`Inget värde på CO2 givare`,'fan','error');
@@ -1390,7 +2789,7 @@ async function runFan() {
             
         },(err => {
             if(err) {
-                nibe.log(err,'fan','error');
+                //nibe.log(err,'fan','error');
             } else {
                 if(config.fan.enable_low===true && data.cpr_set.raw_data<config.fan.low_cpr_freq) {
                     nibe.log(`Kompressorfrekvens under gränsvärde`,'fan','debug');
@@ -1484,8 +2883,8 @@ async function runFan() {
     
     
     // Start regulating only if not defrosting and vented air is above freezing temperatures.
-    if(dMboost===true || co2boost===true || (data.alarm.raw_data!==183 && data.evaporator.raw_data>0 && data.temp_fan_speed!==undefined && data.temp_fan_speed.raw_data===0)) {
-        if(flow_set<100) {
+    if((data.alarm.raw_data!==183 && data.evaporator.raw_data>0 && data.temp_fan_speed!==undefined && data.temp_fan_speed.raw_data===0)) {
+        if(flow_set<30) {
             nibe.log(`För lågt luftflöde inställt, avbryter.`,'fan','error');
             return;
         }
@@ -1495,11 +2894,27 @@ async function runFan() {
         }
         nibe.log(`Villkor uppfyllda för reglering av flöde.`,'fan','debug');
         nibe.log(`Flowset: ${flow_set}, Flöde: ${data.bs1_flow.raw_data}, Flowsaved: ${flow_saved}`,'fan','debug');
-        if(data.bs1_flow.raw_data>(flow_set+25) && (flow_saved===undefined || data.bs1_flow.raw_data>flow_saved+25)) {
+        if(fan_mode!=="dMboost" && fan_mode!=="co2boost" && fan_mode!=="low" && data.bs1_flow.raw_data>(flow_set+25) && (flow_saved===undefined || data.bs1_flow.raw_data>flow_saved+25)) {
             nibe.log(`Luftflöde långt över börvärde: ${flow_set}, Flöde: ${data.bs1_flow.raw_data} m3/h, Forcering pågår`,'fan','debug');
+        } else if(data.bs1_flow.raw_data>(flow_set+20)) {
+            if(data.fan_speed.raw_data-5>10) {
+                nibe.log(`Luftflöde långt över gränsvärde: ${flow_set+20}, Flöde: ${data.bs1_flow.raw_data} m3/h, -5%`,'fan','debug');
+                nibe.setData(hP.fan_speed,(data.fan_speed.raw_data-5));
+            } else if(data.fan_speed.raw_data>10) {
+                nibe.log(`Luftflöde långt över gränsvärde: ${flow_set+20}, Flöde: ${data.bs1_flow.raw_data} m3/h, -1%`,'fan','debug');
+                nibe.setData(hP.fan_speed,(data.fan_speed.raw_data-1));
+            }
         } else if(data.bs1_flow.raw_data>(flow_set+10)) {
             nibe.log(`Luftflöde över gränsvärde: ${flow_set+10}, Flöde: ${data.bs1_flow.raw_data} m3/h, -1%`,'fan','debug');
             if(data.fan_speed.raw_data>0) nibe.setData(hP.fan_speed,(data.fan_speed.raw_data-1));
+        } else if(data.bs1_flow.raw_data<(flow_set-20)) {
+            if(data.fan_speed.raw_data+5<100) {
+                nibe.log(`Luftflöde långt under gränsvärde: ${flow_set+20}, Flöde: ${data.bs1_flow.raw_data} m3/h, +5%`,'fan','debug');
+                nibe.setData(hP.fan_speed,(data.fan_speed.raw_data+5));
+            } else if(data.fan_speed.raw_data<100) {
+                nibe.log(`Luftflöde långt under gränsvärde: ${flow_set+20}, Flöde: ${data.bs1_flow.raw_data} m3/h, +1%`,'fan','debug');
+                nibe.setData(hP.fan_speed,(data.fan_speed.raw_data+1));
+            }
         } else if(data.bs1_flow.raw_data<(flow_set-10)) {
             nibe.log(`Luftflöde under gränsvärde: ${flow_set+10}, Flöde: ${data.bs1_flow.raw_data} m3/h, +1%`,'fan','debug');
             if(data.fan_speed.raw_data<100) nibe.setData(hP.fan_speed,(data.fan_speed.raw_data+1));
@@ -1555,7 +2970,7 @@ async function runFan() {
         if(data.evaporator.raw_data<0) nibe.log(`Villkor för reglering ej uppfyllt, förångaren för kall (${data.evaporator.raw_data})`,'fan','debug');
         if(data.temp_fan_speed!==undefined && data.temp_fan_speed.raw_data!==0) nibe.log(`Villkor för reglering ej uppfyllt, Tillfällig fläktforcering pågår. värde: ${data.temp_fan_speed.raw_data}`,'fan','debug');
     }
-    data.cpr_act = await getNibeData(hP['cpr_act']);
+    data.cpr_act = await getNibeData(hP['cpr_act']).catch(console.log);
     saveDataGraph('fan_setpoint',timeNow,flow_set,true);
     saveDataGraph('filter_eff',timeNow,filter_eff,true);
     data.filter_eff = filter_eff;
@@ -1591,11 +3006,11 @@ async function runRMU(result,array) {
 }
 async function getNibeData(register) {
     const promise = new Promise((resolve,reject) => {
-    if(savedData[register]===undefined || Date.now()>(savedData[register].timestamp+10000)) {
+    if(savedData[register]===undefined || Date.now()>(savedData[register].timestamp+30000)) {
         nibe.reqData(register).then(atad => {
             let data = Object.assign({}, atad);
             resolve(data);
-        },err => {
+        }).catch(err => {
             reject(err);
         });
     } else {
@@ -1719,7 +3134,7 @@ async function runDiagnostic() {
                 }
                 saveDataGraph('cpr_runtime',Date.now(),0,true);
             }
-        });
+        }).catch(console.log);
     }
     async function defrostCheck() {
         if(timer.diagnostic!==undefined && timer.diagnostic._idleTimeout>0) {
@@ -1745,13 +3160,13 @@ async function runDiagnostic() {
             if(timer.diagnostic===undefined || timer.diagnostic._idleTimeout===-1) {
                 timer.diagnostic = setTimeout(defrostCheck, defrostTimer);
             }
-        },(err => {
+        }).catch(err => {
             nibe.log(`No defrost data.`,'diagnostic','debug');
             defrostTimer = 60000;
             if(timer.diagnostic===undefined || timer.diagnostic._idleTimeout===-1) {
                 timer.diagnostic = setTimeout(defrostCheck, defrostTimer);
             }
-        }))
+        })
         uptimeCheck();
     }
     let config = nibe.getConfig();
@@ -1765,15 +3180,15 @@ async function runDiagnostic() {
             timer.diagnostic = setTimeout(defrostCheck, defrostTimer);
         }
     } else {
-        nibe.log(`Heatpump is not supported`,'diagnostic','error');
+        nibe.log(`Heatpump is not supported`,'diagnostic','debug');
     }
 }
 async function tenMinuteUpdate() {
     let config = nibe.getConfig();
     if(config.system.auto_update===undefined || config.system.auto_update===true) {
-        getNibeData(hP['inside_set_s1']);
+        getNibeData(hP['inside_set_s1']).catch(console.log);
         if(systems!==undefined && systems.s2===true) {
-            getNibeData(hP['inside_set_s2']);
+            getNibeData(hP['inside_set_s2']).catch(console.log);
         }
     }
 }
@@ -1784,16 +3199,16 @@ async function minuteUpdate() {
         nibe.setConfig(config);
     }
     if(config.system.auto_update===true) {
-        getNibeData(hP['outside']);
-        getNibeData(hP['inside_s1']);
-        getNibeData(hP['curveadjust_s1']);
-        getNibeData(hP['setpoint_s1']);
-        getNibeData(hP['supply_s1']);
+        getNibeData(hP['outside']).catch(console.log);
+        getNibeData(hP['inside_s1']).catch(console.log);
+        getNibeData(hP['curveadjust_s1']).catch(console.log);
+        getNibeData(hP['setpoint_s1']).catch(console.log);
+        getNibeData(hP['supply_s1']).catch(console.log);
         if(systems!==undefined && systems.s2===true) {
-            getNibeData(hP['inside_s2']);
-            getNibeData(hP['curveadjust_s2']);
-            getNibeData(hP['setpoint_s2']);
-            getNibeData(hP['supply_s2']);
+            getNibeData(hP['inside_s2']).catch(console.log);
+            getNibeData(hP['curveadjust_s2']).catch(console.log);
+            getNibeData(hP['setpoint_s2']).catch(console.log);
+            getNibeData(hP['supply_s2']).catch(console.log);
         }
     }
 }
@@ -1815,6 +3230,23 @@ const checkTranslation = (node) => {
     function nibeConfig(n) {
         RED.nodes.createNode(this,n);
         var cron = require('node-cron');
+        let config = nibe.getConfig();
+        if(config.price===undefined) {
+            config.price = {};
+            nibe.setConfig(config);
+            nibe.log(`Sätter config för första gången för elprisregleringen.`,'price','debug');
+        }
+        if(config.price.enable_freq===undefined) {
+            config.price.enable_freq = false
+            config.price.block_add = false
+            config.price.enable_dM_reset = false
+            config.price.min_freq = 21
+            config.price.max_freq = 35
+            config.price.min_temp = -20
+            config.price.max_temp = 0
+            nibe.setConfig(config);
+            nibe.log(`Sätter config för Elprisreglering till standardvärden för frekvensstyrning`,'price','debug');
+        }
         nibeData.emit('config',nibe.getConfig());
         checkTranslation(this);
         const handleMQTT = (config) => {
@@ -1847,14 +3279,26 @@ const checkTranslation = (node) => {
                     if(config.connection.series=="fSeries") {
                     if(config.serial.port!=="" && config.serial.port!==undefined && (config.connection.enable==="serial" || config.connection.enable==="nibegw")) {
                         if(nibe.core===undefined || nibe.core.connected===undefined || nibe.core.connected===false) {
-                            initiateCore(null,config.serial.port, (err,result)=> {
+                            initiateCore(null,config.serial.port, async (err,result)=> {
                                 if(err) console.log(err);
                                 let config = nibe.getConfig();
                                 if(config.system===undefined) {
                                     config.system = {};
                                     nibe.setConfig(config);
                                 }
-                                if(config.system.pump=="F750") hP.supply_s1 = "40047";
+                                var c1 = await getNibeData('40047').catch(console.log)
+                                if(c1!==undefined && c1.data > 0) {
+                                    hP.supply_s1 = "40047";
+                                    console.log('Register 40047 found, using it for supply temp S1')
+                                }
+                                var c2 = await getNibeData('40071').catch(console.log)
+                                if(c2!==undefined && c2.data > 0)  {
+                                    hP.supply_s1 = "40071";
+                                    console.log('Register 40071 found, using it for supply temp S1')
+                                }
+                                
+                                //if(config.system.pump=="F750") hP.supply_s1 = "40047";
+                                //if(config.system.pump=="F1345") hP.supply_s1 = "40071";
                                 sendError('Kärnan',`Nibe ${config.system.pump} är ansluten`);
                                 console.log('Core is connected');
                                 updateData(true);
@@ -2052,7 +3496,7 @@ const checkTranslation = (node) => {
         this.initiatePlugin = initiatePlugin;
         this.updateData = updateData;
         this.hotwaterPlugin = hotwaterPlugin;
-        this.runTibber = getTibberData;
+        this.runTibber = getCloudData;
         this.runFan = runFan;
         this.sendError = sendError;
         this.curveAdjust = curveAdjust;
