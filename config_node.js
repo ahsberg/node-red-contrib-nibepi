@@ -1721,6 +1721,36 @@ async function runPrice(data,array) {
                 
                 var prio_add_enable = await getNibeData(hP['prio_add_enable']).catch(() => {});
                 
+                if(prio_add_enable!==undefined) {
+                    if(config.price.prio_enable===true) {
+                        if(config.price.prio_cop===undefined) config.price.prio_cop = 3;
+                        if(config.price.prio_cost===undefined) config.price.prio_cost = 1;
+                        if(config.price.prio_tax===undefined) config.price.prio_tax = 45;
+                        if(config.price.prio_transfer===undefined) config.price.prio_transfer = 25;
+                        nibe.setConfig(config); // Save defaults if they were missing
+
+                        nibe.log(`Prioriterad tillsats är aktiverad som elprisreglering`,'price','debug');
+                        let price = data.price_current.raw_data;
+                        let fee = config.price.prio_tax + config.price.prio_transfer;
+                        let cop = config.price.prio_cop;
+                        let cost = config.price.prio_cost;
+                        
+                        // Jämför kostnad för 1 kWh värme från pumpen vs. alternativet
+                        // (price + fee) / cop  vs  cost * 100
+                        if((price + fee) > (cost * 100 * cop)) { 
+                            if(prio_add_enable.raw_data===0) {
+                                nibe.log(`Värmepumpen är dyrare att köra än prioriterad tillsats. Slår på tillsats.`, 'price', 'debug');
+                                nibe.setData(hP['prio_add_enable'],1);
+                            }
+                        } else {
+                            if(prio_add_enable.raw_data===1) {
+                                nibe.log(`Värmepumpen är billigare att köra än prioriterad tillsats. Slår av tillsats.`, 'price', 'debug');
+                                nibe.setData(hP['prio_add_enable'],0);
+                            }
+                        }
+                    }
+                }
+                
                 if(prio_add_enable===undefined || prio_add_enable.raw_data===0) {
                     priceAdjustCurve(data);
                     adjustPool(data,data.system)
