@@ -1461,7 +1461,7 @@ function optimizeElectricityTrading(priceData, options = {}) {
 // # SLUT: Algoritm                                                 #
 // ##################################################################
 
-// runPrice, nu med 15-min stöd. Priset för 4 kvartar räknas om till medelvärde för en timme.
+// runPrice, nu med 15-min stöd och dynamisk hantering av sommar-/vintertid
 async function runPrice(data,array) {
         
     nibe.log(`Startar elprisreglering runPrice()`,'price','debug');
@@ -1531,24 +1531,32 @@ async function runPrice(data,array) {
                     nibe.log('Ingen prisdata alls tillgänglig.', 'price', 'warn');
                     return;
                 }
+                
                 // ##################################################################
                 // # START: Logik för att konvertera kvartspriser till timpriser    #
                 // ##################################################################
                 const hourlyPriceList = [];
+                // Gruppera hela objekt (inte bara priset) för att komma åt tidsstämpeln senare
                 const groupedByHour = quarterlyPriceList.reduce((acc, price) => {
                     const hour = price.startsAt.substring(0, 13); // "2025-09-30T10"
                     if (!acc[hour]) {
                         acc[hour] = [];
                     }
-                    acc[hour].push(price.total);
+                    acc[hour].push(price); 
                     return acc;
                 }, {});
 
                 for (const hour in groupedByHour) {
-                    const pricesInHour = groupedByHour[hour];
-                    const averagePrice = pricesInHour.reduce((sum, p) => sum + p, 0) / pricesInHour.length;
+                    const itemsInHour = groupedByHour[hour];
+                    // Beräkna snittet
+                    const averagePrice = itemsInHour.reduce((sum, p) => sum + p.total, 0) / itemsInHour.length;
+                    
+                    // Dynamisk tidszon: Hämta slutet på datumsträngen från första kvarten i timmen
+                    // Exempel in: "2025-11-25T10:00:00.000+01:00" -> Vi tar ".000+01:00"
+                    const timeZoneSuffix = itemsInHour[0].startsAt.slice(19);
+
                     hourlyPriceList.push({
-                        startsAt: `${hour}:00:00.000+02:00`,
+                        startsAt: `${hour}:00:00${timeZoneSuffix}`,
                         total: averagePrice
                     });
                 }
@@ -1633,7 +1641,7 @@ async function runPrice(data,array) {
                 data.heat_price_level = { data: heat.level, raw_data: heat.level };
                 data.hw_price_level = { data: hw.level, raw_data: hw.level };
                 
-                nibe.log(`Lokal AI analys klar. Nivå: ${heat.level}, Pris: ${data.price_current.data} öre`, 'price', 'debug');
+                nibe.log(`Lokal analys klar. Nivå: ${heat.level}, Pris: ${data.price_current.data} öre`, 'price', 'debug');
                 
                 var prio_add_enable = await getNibeData(hP['prio_add_enable']).catch(() => {});
                 
@@ -1741,20 +1749,27 @@ async function runPrice(data,array) {
 
                 // Steg 2: Medelvärdesbilda kvartspriser till timpriser
                 const hourlyPriceList = [];
+                // Gruppera hela objekt (inte bara priset) för att komma åt tidsstämpeln senare
                 const groupedByHour = rawPriceList.reduce((acc, price) => {
                     const hour = price.time_start.substring(0, 13); 
                     if (!acc[hour]) {
                         acc[hour] = [];
                     }
-                    acc[hour].push(price.SEK_per_kWh);
+                    acc[hour].push(price); // Spara hela objektet
                     return acc;
                 }, {});
 
                 for (const hour in groupedByHour) {
-                    const pricesInHour = groupedByHour[hour];
-                    const averagePrice = pricesInHour.reduce((sum, p) => sum + p, 0) / pricesInHour.length;
+                    const itemsInHour = groupedByHour[hour];
+                    // Beräkna snittet
+                    const averagePrice = itemsInHour.reduce((sum, p) => sum + p.SEK_per_kWh, 0) / itemsInHour.length;
+                    
+                    // Dynamisk tidszon: Hämta tidszonssuffixet från det första objektet i timmen
+                    // Exempel in: "2025-11-25T10:00:00+01:00" -> Vi tar "+01:00"
+                    const timeZoneSuffix = itemsInHour[0].time_start.slice(19);
+
                     hourlyPriceList.push({
-                        startsAt: `${hour}:00:00.000+02:00`,
+                        startsAt: `${hour}:00:00${timeZoneSuffix}`,
                         total: averagePrice
                     });
                 }
