@@ -733,7 +733,9 @@ module.exports = function(RED) {
                                     rawForecastGraph.sort((a, b) => (a.x > b.x) ? 1 : -1);
                                     adjustedForecastGraph.sort((a, b) => (a.x > b.x) ? 1 : -1);
                                     if(rawForecastGraph.length>0) {
-                                        savedGraph['weather_unfilterd_'+val.system] = rawForecastGraph;
+                                        const rawName = 'weather_unfilterd_'+val.system;
+                                        const rawHistory = (Array.isArray(savedGraph[rawName]) ? savedGraph[rawName] : []).filter(point => point.x < timeNow);
+                                        savedGraph[rawName] = rawHistory.concat(rawForecastGraph).sort((a, b) => (a.x > b.x) ? 1 : -1);
                                         savedData['weather_unfilterd_'+val.system] = {
                                             data:tempPredictedRaw,
                                             raw_data:tempPredictedRaw,
@@ -741,7 +743,9 @@ module.exports = function(RED) {
                                         }
                                     }
                                     if(adjustedForecastGraph.length>0) {
-                                        savedGraph['weather_forecast_'+val.system] = adjustedForecastGraph;
+                                        const adjustedName = 'weather_forecast_'+val.system;
+                                        const adjustedHistory = (Array.isArray(savedGraph[adjustedName]) ? savedGraph[adjustedName] : []).filter(point => point.x < timeNow);
+                                        savedGraph[adjustedName] = adjustedHistory.concat(adjustedForecastGraph).sort((a, b) => (a.x > b.x) ? 1 : -1);
                                         savedData['weather_forecast_'+val.system] = {
                                             data:tempPredicted,
                                             raw_data:tempPredicted,
